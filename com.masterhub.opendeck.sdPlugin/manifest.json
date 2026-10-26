@@ -1,0 +1,286 @@
+{
+	"Name": "Cooler Master MasterHUB",
+	"Description": "Use Cooler Master MasterHUB modules with OpenDeck",
+	"Author": "Kamil",
+	"Version": "0.1.2",
+	"Icon": "icon",
+	"DeviceNamespace": "mh",
+	"HasSettingsInterface": true,
+	"CodePaths": {
+		"aarch64-apple-darwin": "bin/aarch64-apple-darwin/opendeck-masterhub",
+		"x86_64-apple-darwin": "bin/x86_64-apple-darwin/opendeck-masterhub",
+		"x86_64-pc-windows-msvc": "bin/x86_64-pc-windows-msvc/opendeck-masterhub.exe",
+		"aarch64-pc-windows-msvc": "bin/aarch64-pc-windows-msvc/opendeck-masterhub.exe",
+		"x86_64-unknown-linux-gnu": "bin/x86_64-unknown-linux-gnu/opendeck-masterhub",
+		"aarch64-unknown-linux-gnu": "bin/aarch64-unknown-linux-gnu/opendeck-masterhub"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "10.15"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		},
+		{
+			"Platform": "linux"
+		}
+	],
+	"Actions": [
+		{
+			"UUID": "com.masterhub.opendeck.clock",
+			"Name": "Clock",
+			"Tooltip": "Time and date; on the MasterHUB dial drawn full screen",
+			"Icon": "icons/clock",
+			"States": [
+				{
+					"Image": "icons/clock"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.analogclock",
+			"Name": "Analog clock",
+			"Tooltip": "A clock face with hands; on the MasterHUB dial drawn full screen",
+			"Icon": "icons/analogclock",
+			"States": [
+				{
+					"Image": "icons/analogclock"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.timer",
+			"Name": "Timer",
+			"Tooltip": "Countdown: turn to set (10 s steps), press to start/stop",
+			"Icon": "icons/timer",
+			"States": [
+				{
+					"Image": "icons/timer"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Start / stop",
+					"Rotate": "Set time"
+				}
+			}
+		},
+		{
+			"UUID": "com.masterhub.opendeck.cpu",
+			"Name": "CPU load",
+			"Tooltip": "Processor load in percent",
+			"Icon": "icons/cpu",
+			"States": [
+				{
+					"Image": "icons/cpu"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.memory",
+			"Name": "Memory use",
+			"Tooltip": "Used RAM in percent",
+			"Icon": "icons/memory",
+			"States": [
+				{
+					"Image": "icons/memory"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.cputemp",
+			"Name": "CPU temperature",
+			"Tooltip": "Hottest CPU sensor; '--' when the system exposes none",
+			"Icon": "icons/cputemp",
+			"States": [
+				{
+					"Image": "icons/cputemp"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.gpu",
+			"Name": "GPU load",
+			"Tooltip": "GPU load; on the MasterHUB dial drawn full screen",
+			"Icon": "icons/gpu",
+			"States": [
+				{
+					"Image": "icons/gpu"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.gputemp",
+			"Name": "GPU temperature",
+			"Tooltip": "GPU temperature (Windows and Linux); on the MasterHUB dial drawn full screen",
+			"Icon": "icons/gputemp",
+			"States": [
+				{
+					"Image": "icons/gputemp"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "On press (settings)",
+					"Rotate": ""
+				}
+			},
+			"PropertyInspectorPath": "pi/info.html"
+		},
+		{
+			"UUID": "com.masterhub.opendeck.appvolume",
+			"Name": "App volume",
+			"Tooltip": "Volume of chosen apps (macOS through FineTune, Windows, Linux): a fader sets it, knobs step it, a press toggles mute",
+			"Icon": "icons/appvolume",
+			"States": [
+				{
+					"Image": "icons/appvolume"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"PropertyInspectorPath": "pi/appvolume.html",
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Mute",
+					"Rotate": "Volume"
+				}
+			}
+		},
+		{
+			"UUID": "com.masterhub.opendeck.lighting",
+			"Name": "LED lighting",
+			"Tooltip": "Turn the MasterHUB LEDs off / on, cycle or set their effect",
+			"Icon": "icons/lighting",
+			"States": [
+				{
+					"Image": "icons/lighting"
+				}
+			],
+			"Controllers": [
+				"Keypad",
+				"Encoder"
+			],
+			"PropertyInspectorPath": "pi/lighting.html",
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Toggle / next",
+					"Rotate": "Next effect"
+				}
+			}
+		},
+		{
+			"UUID": "com.masterhub.opendeck.command",
+			"Name": "Command",
+			"Tooltip": "Run a command with the fader's position ({value}) or the clicks turned ({ticks})",
+			"Icon": "icons/command",
+			"States": [
+				{
+					"Image": "icons/command"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"PropertyInspectorPath": "pi/command.html",
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Press command",
+					"Rotate": "Command"
+				}
+			}
+		}
+	],
+	"Category": "MasterHUB",
+	"CategoryIcon": "category"
+}

@@ -1,0 +1,157 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>MasterHUB live input</title>
+<style>
+  :root { --bg: #f4f4f6; --panel: #fff; --ink: #1d1d22; --muted: #6b6b75; --line: #d9d9e0; --on: #00a67e; --warn: #fff3c4; --warn-ink: #6b5200; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #16161a; --panel: #212127; --ink: #ececf1; --muted: #9a9aa5; --line: #34343c; --warn: #3a3214; --warn-ink: #f0d27a; } }
+  body { font: 14px system-ui, sans-serif; background: var(--bg); color: var(--ink); margin: 0; padding: 1.5rem 1rem; }
+  h1, p.hint, .bar, main, .log { max-width: 72rem; margin-left: auto; margin-right: auto; }
+  h1 { margin-top: 0; margin-bottom: .5rem; font-size: 1.3rem; }
+  p.hint { margin-top: 0; color: var(--muted); }
+  main { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); margin-bottom: 1rem; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .9rem 1rem; }
+  h2 { font-size: 1rem; margin: 0 0 .2rem; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: .6rem; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .cell { border: 1px solid var(--line); border-radius: 6px; padding: .35rem .2rem; text-align: center; font: 11px ui-monospace, monospace; transition: background .15s; }
+  .cell.on { background: var(--on); color: #fff; border-color: var(--on); }
+  .row { display: flex; gap: .8rem; flex-wrap: wrap; align-items: flex-end; }
+  .ctl { display: grid; justify-items: center; gap: 3px; font: 12px ui-monospace, monospace; }
+  .knob { width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 600; transition: background .15s; }
+  .knob.on { background: var(--on); color: #fff; border-color: var(--on); }
+  .flash { color: var(--on); min-height: 1em; }
+  .fader { width: 18px; height: 110px; border: 1px solid var(--line); border-radius: 4px; position: relative; overflow: hidden; }
+  .fader > div { position: absolute; bottom: 0; left: 0; right: 0; background: var(--on); }
+  .bar { display: flex; gap: .8rem; flex-wrap: wrap; align-items: center; margin-bottom: .6rem; }
+  button { font: inherit; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); cursor: pointer; }
+  .log { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font: 12px ui-monospace, monospace; }
+  th, td { text-align: left; padding: .3rem .6rem; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  tr.unknown td { background: var(--warn); color: var(--warn-ink); }
+  td.raw { color: var(--muted); }
+  .empty { padding: 1rem; color: var(--muted); }
+</style>
+<h1>MasterHUB live input</h1>
+<p class="hint">Press keys, turn knobs, rollers and the dial, move faders: each module below shows what the plugin read,
+  as <b>module control → OpenDeck position</b>. The log lists every packet; yellow rows came on the event channel but
+  the plugin didn't understand them — those are worth reporting with their raw bytes.</p>
+<div class="bar">
+  <button id="pause">Pause</button>
+  <button id="clear">Clear</button>
+  <button id="save">Save log</button>
+  <label><input type="checkbox" id="all"> Show packets without events (heartbeats, replies)</label>
+  <span id="status" class="meta"></span>
+</div>
+<main id="modules"></main>
+<div class="log"><table><thead><tr><th>Time</th><th>Module</th><th>Plugin read</th><th>Raw packet</th></tr></thead>
+  <tbody id="log"></tbody></table><div class="empty" id="empty">Waiting for input…</div></div>
+<script>
+const EVENT_CHANNEL = { Keys: 0x34, Dial: 0x44, Knobs: 0x2a, Faders: 0x2a, Rollers: 0x2a };
+const CONTROLS = { Keys: 15, Knobs: 3, Faders: 5, Rollers: 2, Dial: 1 };
+const LABEL = { Keys: '15xKey M4315', Knobs: '3xKnob M003K', Faders: '5xFader M005S', Rollers: '2xRoller M032LE', Dial: 'Dial M131E', Base: 'Base M0064' };
+const modules = {}; // device id -> { kind, pressed[], ticks[], faders[], map[], last[], horizontal, count }
+let after = 0, paused = false, rows = 0;
+const received = []; // every packet received, for "Save log" (newest 20000)
+const $ = (id) => document.getElementById(id);
+
+function bytes(raw) { return raw.split(' ').map((h) => parseInt(h, 16)); }
+
+/** Live state of a module from one packet; values decoded from the raw bytes like the plugin does. */
+function apply(e) {
+  const m = modules[e.device] ||= { kind: e.kind, pressed: [], ticks: [], faders: [], map: [], last: [], count: 0 };
+  m.count++;
+  const b = bytes(e.raw);
+  if (e.kind === 'Faders' && b[1] === EVENT_CHANNEL.Faders) m.faders = b.slice(6, 6 + Math.min(b[5] || 0, 5));
+  for (const ev of e.events) {
+    if (ev.event === 'orientation') { m.horizontal = ev.horizontal; continue; }
+    const i = ev.module;
+    if (i == null) continue;
+    m.map[i] = ev.opendeck;
+    if (ev.event.endsWith('Down')) m.pressed[i] = true;
+    if (ev.event.endsWith('Up')) m.pressed[i] = false;
+    if (ev.event === 'encoderChange') {
+      m.ticks[i] = (m.ticks[i] || 0) + ev.ticks;
+      m.last[i] = { text: ev.ticks > 0 ? `+${ev.ticks} ⟳` : `${ev.ticks} ⟲`, at: Date.now() };
+    }
+  }
+}
+
+function describe(e) {
+  if (!e.events.length) {
+    const b = bytes(e.raw);
+    return b[1] === EVENT_CHANNEL[e.kind] ? `not understood (event id ${b[4]})` : `channel 0x${b[1].toString(16)} — no event`;
+  }
+  return e.events.map((ev) => ev.event === 'orientation' ? `orientation: ${ev.horizontal ? 'horizontal' : 'vertical'}`
+    : `${ev.event} ${ev.module} → ${ev.opendeck}${ev.ticks != null ? ` (${ev.ticks > 0 ? '+' : ''}${ev.ticks})` : ''}`).join(', ');
+}
+
+// what comes from the module (its id has its USB serial in it) goes into the page as text, never as markup
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const pos = (m, i) => `${i}→${esc(m.map[i] ?? '?')}`;
+const flash = (m, i) => m.last[i] && Date.now() - m.last[i].at < 700 ? m.last[i].text : '';
+
+function render() {
+  $('modules').innerHTML = Object.entries(modules).map(([id, m]) => {
+    let body = '';
+    const n = CONTROLS[m.kind] || 0;
+    const idx = [...Array(n).keys()];
+    switch (m.kind) {
+      case 'Keys':
+        body = `<div class="grid">${idx.map((i) => `<div class="cell${m.pressed[i] ? ' on' : ''}">${pos(m, i)}</div>`).join('')}</div>`;
+        break;
+      case 'Knobs': case 'Dial': case 'Rollers':
+        body = `<div class="row">${idx.map((i) => `<div class="ctl"><div class="knob${m.pressed[i] ? ' on' : ''}">${m.ticks[i] || 0}</div>
+          <span>${pos(m, i)}</span><span class="flash">${flash(m, i)}</span></div>`).join('')}</div>`;
+        break;
+      case 'Faders':
+        body = `<div class="row">${idx.map((i) => `<div class="ctl"><div class="fader"><div style="height:${m.faders[i] ?? 0}%"></div></div>
+          <span>${m.faders[i] ?? '–'}</span><span>${pos(m, i)}</span><span class="flash">${flash(m, i)}</span></div>`).join('')}</div>`;
+        break;
+      case 'Base':
+        body = `<div class="cell on" style="display:inline-block;padding:.4rem .8rem">${m.horizontal == null ? 'orientation not reported yet' : m.horizontal ? 'horizontal' : 'vertical'}</div>`;
+        break;
+    }
+    const hint = { Knobs: 'number = ticks counted, green = pressed', Dial: 'number = ticks counted, green = pressed',
+      Rollers: 'number = ticks counted (index 0 = right wheel)', Faders: 'bar = position 0–100 read from the module' }[m.kind] || '';
+    return `<section><h2>${esc(LABEL[m.kind] || m.kind)}</h2><div class="meta">${esc(id)} · ${m.count} packets${hint ? ' · ' + hint : ''}</div>${body}</section>`;
+  }).join('');
+}
+
+function log(e) {
+  if (!e.events.length && !$('all').checked && bytes(e.raw)[1] !== EVENT_CHANNEL[e.kind]) return;
+  const unknown = !e.events.length && bytes(e.raw)[1] === EVENT_CHANNEL[e.kind] && e.kind !== 'Faders';
+  const tr = document.createElement('tr');
+  if (unknown) tr.className = 'unknown';
+  tr.innerHTML = `<td>${esc(e.time)}</td><td>${esc(LABEL[e.kind] || e.kind)}</td><td></td><td class="raw"></td>`;
+  tr.children[2].textContent = describe(e);
+  tr.children[3].textContent = e.raw;
+  $('log').prepend(tr);
+  $('empty').hidden = true;
+  if (++rows > 300) { $('log').lastElementChild.remove(); rows--; }
+}
+
+async function poll() {
+  if (!paused) {
+    try {
+      const events = await (await fetch(`debug/events?after=${after}`)).json();
+      for (const e of events) { after = e.seq; apply(e); log(e); received.push(e); }
+      if (received.length > 20000) received.splice(0, received.length - 20000);
+      $('status').textContent = '';
+    } catch { $('status').textContent = 'Plugin not reachable — is OpenDeck running?'; }
+    render();
+  }
+  setTimeout(poll, 200);
+}
+
+$('save').onclick = () => {
+  const blob = new Blob([JSON.stringify({ saved: new Date().toISOString(), modules, packets: received }, null, 1)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `masterhub-input-${Date.now()}.json` });
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? 'Resume' : 'Pause'; };
+$('clear').onclick = () => { for (const k in modules) delete modules[k]; $('log').innerHTML = ''; rows = 0; $('empty').hidden = false; render(); };
+poll();
+</script>

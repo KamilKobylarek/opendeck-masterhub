@@ -1,0 +1,5 @@
+# The Rust every build uses (CI, releases, the Linux container), so a new release of Rust or clippy can't change
+# a release by surprise. Move it on deliberately.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]

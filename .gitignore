@@ -1,0 +1,10 @@
+target/
+com.masterhub.opendeck.sdPlugin/bin/
+graphify-out/
+MasterHUB/
+.DS_Store
+dist/
+# local tooling (graphify's Claude Code integration)
+CLAUDE.md
+.claude/
+__pycache__/

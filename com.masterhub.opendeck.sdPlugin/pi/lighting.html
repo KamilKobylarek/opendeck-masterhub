@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; color: #d8d8d8; background: transparent; margin: 0; padding: 8px; }
+  label { display: block; margin: 8px 0 4px; }
+  select { width: 100%; box-sizing: border-box; font: inherit; background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 5px; }
+  p { color: #9a9a9a; margin: 6px 0; line-height: 1.4; }
+</style>
+<label for="do">On press</label>
+<select id="do">
+  <option value="toggle">Turn the LEDs off / on</option>
+  <option value="next">Next effect (turning goes through them)</option>
+  <option value="set">Set the effect</option>
+</select>
+<label for="effect">Effect (for on / set)</label>
+<select id="effect"></select>
+<p>For the knob, fader and base LEDs; colours and speed come from the plugin's settings page. Using this
+  action lets the plugin manage the LEDs.</p>
+<script>
+// Stream Deck property inspector protocol, which OpenDeck implements.
+const EFFECTS = ['Static', 'Breathing', 'Strobe', 'Spring', 'Cycling', 'Random', 'Wave', 'Water', 'Rainbow'];
+const effect = document.getElementById('effect');
+EFFECTS.forEach((name, i) => effect.add(new Option(name, String(i + 1))));
+const fields = ['do', 'effect'].map((id) => document.getElementById(id));
+let socket, context;
+function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+  context = uuid;
+  const settings = JSON.parse(actionInfo).payload.settings || {};
+  for (const f of fields) if (settings[f.id]) f.value = settings[f.id];
+  socket = new WebSocket(`ws://127.0.0.1:${port}`);
+  socket.onopen = () => socket.send(JSON.stringify({ event: registerEvent, uuid }));
+  for (const f of fields) {
+    f.addEventListener('change', () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({ event: 'setSettings', context, payload: Object.fromEntries(fields.map((x) => [x.id, x.value])) }));
+    });
+  }
+}
+</script>

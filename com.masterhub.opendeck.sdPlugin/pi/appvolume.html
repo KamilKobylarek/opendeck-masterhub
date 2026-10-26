@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; color: #d8d8d8; background: transparent; margin: 0; padding: 8px; }
+  label { display: block; margin: 8px 0 4px; }
+  textarea, input { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 6px; }
+  p { color: #9a9a9a; margin: 6px 0; line-height: 1.4; }
+  code { color: #ccc; }
+</style>
+<label for="apps">Apps</label>
+<textarea id="apps" rows="3"></textarea>
+<p id="hint"></p>
+<p>A MasterHUB fader sets the volume to its position; knobs, rollers and the dial step it; a press toggles mute.</p>
+<div id="stepRow">
+  <label for="step">Step per knob click (%)</label>
+  <input id="step" type="number" min="1" max="25" placeholder="5">
+</div>
+<label for="dialScreen">On the MasterHUB dial show</label>
+<select id="dialScreen">
+  <option value="">The volume</option>
+  <option value="clock">Clock</option>
+  <option value="analogclock">Analog clock</option>
+  <option value="cpu">CPU load</option>
+  <option value="memory">Memory use</option>
+  <option value="cputemp">CPU temperature</option>
+  <option value="gpu">GPU load</option>
+  <option value="gputemp">GPU temperature</option>
+</select>
+<script>
+// Stream Deck property inspector protocol, which OpenDeck implements.
+const HINTS = {
+  mac: ['com.spotify.client, com.hnc.Discord', 'Bundle ids. Needs <b>FineTune</b> (free, <code>brew install --cask finetune</code>). Find an id: <code>osascript -e \'id of app "Spotify"\'</code>'],
+  windows: ['spotify, discord, chrome', 'Process names as in Task Manager → Details (".exe" optional). Every audio stream of that program counts.'],
+  linux: ['spotify, firefox', 'Program names (the stream\'s binary or application name in <code>pactl list sink-inputs</code>). Needs <code>pactl</code> (PulseAudio or PipeWire).'],
+};
+const fields = ['apps', 'step', 'dialScreen'].map((id) => document.getElementById(id));
+let socket, context;
+function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+  context = uuid;
+  const platform = (JSON.parse(info).application || {}).platform || 'mac';
+  const [placeholder, hint] = HINTS[platform] || HINTS.linux;
+  document.getElementById('apps').placeholder = placeholder;
+  document.getElementById('hint').innerHTML = hint;
+  const settings = JSON.parse(actionInfo).payload.settings || {};
+  for (const f of fields) f.value = settings[f.id] || '';
+  socket = new WebSocket(`ws://127.0.0.1:${port}`);
+  socket.onopen = () => socket.send(JSON.stringify({ event: registerEvent, uuid }));
+  for (const f of fields) {
+    f.addEventListener(f.tagName === 'SELECT' ? 'change' : 'input', () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      const payload = Object.fromEntries(fields.map((x) => [x.id, x.value]));
+      socket.send(JSON.stringify({ event: 'setSettings', context, payload }));
+    });
+  }
+}
+</script>

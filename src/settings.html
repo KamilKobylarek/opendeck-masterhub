@@ -1,0 +1,159 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MasterHUB</title>
+<style>
+  :root {
+    --bg: #f3f3f6; --card: #ffffff; --ink: #1b1b20; --muted: #6b6b76; --line: #e2e2e8; --field: #f7f7fa;
+    --accent: #6c4cf5; --accent-ink: #ffffff; --ok: #0f9d6b; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121216; --card: #1c1c22; --ink: #ececf2; --muted: #9a9aa6; --line: #2d2d36; --field: #24242b;
+      --accent: #8f74ff; --ok: #3fd29b; --shadow: 0 1px 2px rgba(0,0,0,.4);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 1.6rem 1.25rem 1rem; max-width: 72rem; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 1.6rem; letter-spacing: -.01em; }
+  header p { margin: .15rem 0 0; color: var(--muted); }
+  .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+  nav { max-width: 72rem; margin: 0 auto; padding: 0 1.25rem .5rem; display: flex; gap: .4rem; flex-wrap: wrap; }
+  nav a { color: var(--muted); text-decoration: none; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font-size: 13px; }
+  nav a:hover { color: var(--ink); border-color: var(--accent); }
+  main { max-width: 72rem; margin: 0 auto; padding: .5rem 1.25rem 6rem; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.1rem 1.2rem 1.2rem; box-shadow: var(--shadow); min-width: 0; }
+  section.wide { grid-column: 1 / -1; }
+  section > h2 { margin: 0 0 .25rem; font-size: 1.05rem; }
+  section > .lead { margin: 0 0 .9rem; color: var(--muted); }
+  h2 + p, .lead { color: var(--muted); }
+  p { margin: .5rem 0; }
+  label { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: .45rem 0; border-top: 1px solid var(--line); }
+  label:first-of-type { border-top: 0; }
+  input, select, button { font: inherit; color: inherit; }
+  input:not([type=checkbox]):not([type=radio]):not([type=color]), select {
+    background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: .4rem .55rem; min-width: 0;
+  }
+  input[type=number] { width: 6.5rem; }
+  input[name=kbg], input[name^=mqtt_] { flex: 1; max-width: 26rem; }
+  input[name^="sc:"] { width: 100%; min-width: 16rem; }
+  input[type=checkbox] { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); flex: none; }
+  input[type=color] { width: 2.2rem; height: 1.8rem; border: 1px solid var(--line); border-radius: 6px; padding: 0; background: none; }
+  button, .button { border: 1px solid var(--line); background: var(--card); border-radius: 9px; padding: .45rem .9rem; cursor: pointer; text-decoration: none; color: var(--ink); display: inline-block; }
+  button:hover, .button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: .55rem 1.4rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .scroll { overflow-x: auto; }
+  th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 500; }
+  td img { width: 40px; height: auto; border-radius: 6px; background: #000; }
+  .sw { display: inline-block; width: 1.3rem; height: 1.3rem; border-radius: 50%; border: 1px solid var(--line); vertical-align: middle; }
+  .ok { color: var(--ok); font-weight: 600; margin: 0; }
+  .warn { color: #e0a100; font-weight: 600; margin: 0; }
+  .views { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin-bottom: .8rem; }
+  .views label { border: 0; padding: .35rem .8rem; cursor: pointer; gap: .4rem; }
+  .views input { position: absolute; opacity: 0; pointer-events: none; }
+  .views label:has(input:checked) { background: var(--accent); color: var(--accent-ink); }
+  .stage { background: #16161b; border-radius: 12px; padding: 14px; overflow: auto; display: flex; justify-content: center; }
+  .pictures { position: relative; flex: none; }
+  .pictures figure { position: absolute; margin: 0; }
+  .pictures .pic { position: absolute; left: 0; top: 0; transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+  .pictures .pic svg { display: block; width: 100%; height: 100%; }
+  .pictures .port { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; background: #fff; color: #16161b; font: 700 11px/22px system-ui, sans-serif; text-align: center; box-shadow: 0 0 0 2px #16161b, 0 2px 6px rgba(0,0,0,.5); }
+  .pictures figcaption { position: absolute; transform: translate(-50%, -50%); background: rgba(0,0,0,.65); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: .7rem 1.25rem calc(.7rem + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+  .bar div { max-width: 72rem; margin: 0 auto; display: flex; gap: 1rem; align-items: center; justify-content: flex-end; }
+</style>
+<header>
+  <div><h1>MasterHUB</h1><p>Cooler Master MasterHUB in OpenDeck</p></div>
+  <form class="actions" action="identify" method="post">
+    <button title="For 10 s: keys show their OpenDeck positions, the dial its turn, LEDs light by position">Identify modules</button>
+    <a class="button" href="debug" target="_blank">Live input</a>
+  </form>
+</header>
+<form action="save" method="post">
+<input type="hidden" name="form" value="settings">
+<!-- first in the form, so Enter in any field saves (the browser presses the form's first button) -->
+<div class="bar"><div>{{SAVED}}<button class="primary">Save</button></div></div>
+<nav>
+  <a href="#placement">Placement</a><a href="#modules">Modules</a><a href="#base">Base</a><a href="#knobs">Knobs &amp; dial</a>
+  <a href="#faders">Faders</a><a href="#lighting">Lighting</a><a href="#mqtt">Home Assistant</a><a href="#keypad">15xKey background</a>
+</nav>
+<main>
+  <section id="placement" class="wide">
+    <h2>Placement</h2>
+    <p class="lead">The base and its modules as the plugin sees them, turned like the base on the desk (<span id="turn">{{BASE_TURN}}</span>). Follows the base live; compare with the real one when something sits or turns wrong.</p>
+    <div class="views">
+      <label><input type="radio" name="placeview" value="drawing" {{VIEW_DRAWING}}> Drawing</label>
+      <label><input type="radio" name="placeview" value="pictures" {{VIEW_PICTURES}}> Pictures</label>
+    </div>
+    <div class="stage" id="view-drawing">{{PLACEMENT_SVG}}</div>
+    <div class="stage" id="view-pictures">{{PLACEMENT_PICTURES}}</div>
+    <div class="scroll"><table><thead><tr><th>Module</th><th>OpenDeck id</th><th>Socket</th><th>Turn</th></tr></thead><tbody id="rows">{{PLACEMENT_ROWS}}</tbody></table></div>
+  </section>
+  <section id="modules" class="wide">
+    <h2>Modules</h2>
+    <p class="lead">What each connected module reports about itself.</p>
+    <div class="scroll">{{MODULES}}</div>
+  </section>
+  <section id="base">
+    <h2>Base</h2>
+    <p class="lead">Auto follows the base's tilt sensor; pick a turn if the layout in OpenDeck doesn't match. Changing it registers the modules again.</p>
+    {{BASE}}
+  </section>
+  <section id="knobs">
+    <h2>Knobs &amp; dial</h2>
+    <p class="lead">Like the official app, a knob or the dial can hold several functions: a short press switches, a long press presses. The dial also has a key in OpenDeck: an action on it takes the dial's press.</p>
+    {{KNOBS}}
+  </section>
+  <section id="faders">
+    <h2>Faders</h2>
+    <p class="lead">Ticks sent per 1% of travel: 1 = full travel is 100 ticks, 0.2 = 20 ticks (for actions that move 5% per tick).</p>
+    {{FADERS}}
+  </section>
+  <section id="lighting" class="wide">
+    {{LIGHTING}}
+  </section>
+  <section id="mqtt" class="wide">
+    {{MQTT}}
+  </section>
+  <section id="keypad" class="wide">
+    <h2>15xKey background</h2>
+    <p class="lead">A picture behind the keys on the whole key module (PNG, JPEG… or an animated GIF, up to ~14 frames a second); keys without an action show it. Scaled to {{KEYPAD_SIZE}}.</p>
+    {{KEYPAD}}
+  </section>
+</main>
+</form>
+<script>
+  // drawing / pictures: switch at once; the choice is saved with the rest
+  const show = () => {
+    const pictures = document.querySelector('input[name=placeview][value=pictures]').checked;
+    document.getElementById('view-drawing').hidden = pictures;
+    document.getElementById('view-pictures').hidden = !pictures;
+  };
+  document.querySelectorAll('input[name=placeview]').forEach((r) => r.addEventListener('change', show));
+  show();
+
+  // the placement follows the base live: ask every second, swap only what changed
+  let last = '';
+  async function follow() {
+    try {
+      const text = await (await fetch('placement')).text();
+      if (text !== last) {
+        const p = JSON.parse(text);
+        document.getElementById('turn').textContent = p.turn;
+        document.getElementById('view-drawing').innerHTML = p.drawing;
+        document.getElementById('view-pictures').innerHTML = p.pictures;
+        document.getElementById('rows').innerHTML = p.rows;
+        last = text;
+      }
+    } catch (e) { /* OpenDeck closed: keep what's shown */ }
+    setTimeout(follow, 1000);
+  }
+  follow();
+</script>

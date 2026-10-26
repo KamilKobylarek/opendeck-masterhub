@@ -1,0 +1,4 @@
+# Cooler Master MasterHUB: lets the logged-in user open the modules (hidraw) without root.
+# Install: sudo cp linux/70-masterhub.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+# Base M0064, 15xKey M4315, 3xKnob M003K, 5xFader M005S, 2xRoller M032LE, Dial M131E (both product ids each)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="01f6|9999|01fe|9997|0202|9996|0200|9991|0204|9995|0206|9994", TAG+="uaccess"

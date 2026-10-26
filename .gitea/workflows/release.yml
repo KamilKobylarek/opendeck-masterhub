@@ -1,0 +1,72 @@
+name: Release
+
+# Push a tag like v0.2.0: every runner builds its platform and adds its plugin zip to the Gitea release of that
+# tag (created as a pre-release), then `all` merges them into opendeck-masterhub.zip, the one file to install
+# anywhere (OpenDeck → Plugins → Install from file), checks every platform is in it and makes the release a
+# normal one. A failed platform leaves the release a pre-release without that file.
+# Needs the RELEASE_TOKEN secret (repository settings → Actions → Secrets): a Gitea access token with repository
+# write access. It's given only to the upload steps, never to builds (dependencies' build scripts run there).
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  macos:
+    runs-on: macos
+    steps:
+      - uses: builtin:checkout
+      - name: build
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked --target $t
+            mkdir -p com.masterhub.opendeck.sdPlugin/bin/$t
+            cp target/$t/release/opendeck-masterhub com.masterhub.opendeck.sdPlugin/bin/$t/
+          done
+          sh ci/package.sh macos
+      - name: upload
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: python3 ci/release.py upload dist/opendeck-masterhub-macos.zip
+
+  # Linux in Debian containers on the Mac runner (Docker Desktop); x86_64 is emulated, so it takes a while.
+  linux:
+    runs-on: macos
+    steps:
+      - uses: builtin:checkout
+      - name: build
+        env:
+          VERSION: ${{ github.ref_name }}
+          PACKAGE: 1
+        run: |
+          sh ci/linux.sh
+          sh ci/linux.sh --platform linux/amd64
+      - name: upload
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          for f in dist/opendeck-masterhub-linux-*.zip; do python3 ci/release.py upload "$f"; done
+
+  windows:
+    runs-on: windows
+    steps:
+      - uses: builtin:checkout
+      # PowerShell 7 (pwsh), installed by ci/setup-runner-windows.ps1
+      - name: build
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ci/release.ps1 build
+      - name: upload
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ci/release.ps1 upload
+
+  # one zip with every platform; only after all of them built
+  all:
+    needs: [macos, linux, windows]
+    runs-on: macos
+    steps:
+      - uses: builtin:checkout
+      - env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: python3 ci/release.py universal

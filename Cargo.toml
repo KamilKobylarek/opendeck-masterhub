@@ -1,0 +1,27 @@
+[package]
+name = "opendeck-masterhub"
+version = "0.1.2"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "OpenDeck device plugin for the Cooler Master MasterHUB"
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+getrandom = "0.2"
+hidapi = { version = "2", features = ["macos-shared-device"] }
+# Home Assistant over MQTT (src/mqtt.rs): TLS through rustls with the ring provider (builds without extra tools
+# on Windows, unlike the default aws-lc)
+rumqttc = { version = "0.25", default-features = false, features = ["use-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-native-certs = "0.8"
+# the MQTT password in the system's keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux)
+keyring = "4.2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+serde_json = "1"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system", "component"] }
+tungstenite = "0.24"
+
+# Windows: Core Audio sessions (audio_windows.rs), the USB device tree (location.rs), sleep (main.rs)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Foundation", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Threading", "Win32_System_WindowsProgramming"] }
