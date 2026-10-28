@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-pub const UUID: &str = "com.masterhub.opendeck.command";
+pub const UUID: &str = "pl.kobylarek.masterhub.command";
 
 /// Longest a turn's or fader's command may run.
 const TIME_LIMIT: Duration = Duration::from_secs(10);

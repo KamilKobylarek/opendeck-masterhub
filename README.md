@@ -81,8 +81,15 @@ macOS asks once whether it may read the password. Choose **Always Allow**; with 
 start of OpenDeck, and with **Deny** the plugin can't connect to the broker.
 
 Unpacking the zip by hand into OpenDeck's `plugins` folder works too; on macOS the system may then block the
-downloaded program: `xattr -dr com.apple.quarantine <plugins folder>/com.masterhub.opendeck.sdPlugin`. Installing
+downloaded program: `xattr -dr com.apple.quarantine <plugins folder>/pl.kobylarek.masterhub.sdPlugin`. Installing
 through OpenDeck avoids that.
+
+### Upgrading from 0.1.x
+
+0.2.0 changed the plugin's id from `com.masterhub.opendeck` to `pl.kobylarek.masterhub`, so OpenDeck sees it as a
+new plugin. Remove the old one first (OpenDeck → Plugins → *Cooler Master MasterHUB* → remove; `install.sh` and
+`install.ps1` do it themselves), then install the new one. Its settings page starts empty (the MQTT password stays
+in the keychain), and actions placed with the old version have to be placed again.
 
 ### From source
 
@@ -110,7 +117,7 @@ cargo test
   - [docs/device-layout-plan.md](docs/device-layout-plan.md): showing the modules' physical layout once OpenDeck
     ships explicit device layouts ([nekename/OpenDeck#359](https://github.com/nekename/OpenDeck/pull/359));
   - [docs/macos-roller-set-idle.md](docs/macos-roller-set-idle.md): why the 2xRoller needs SET_IDLE on macOS.
-- **Icon**: `com.masterhub.opendeck.sdPlugin/icon.svg` (also the repository's, `docs/images/icon.png`) is a
+- **Icon**: `pl.kobylarek.masterhub.sdPlugin/icon.svg` (also the repository's, `docs/images/icon.png`) is a
   MasterHUB base lying flat with a 2xRoller, 15xKey, 3xKnob and Dial, drawn to scale from the plugin's placement
   model; `category.svg` is the same as a white line drawing for the action list.
 - **Source**: `src/main.rs` (configuration, main loop, input routing, lights), `src/device.rs` (the module threads,

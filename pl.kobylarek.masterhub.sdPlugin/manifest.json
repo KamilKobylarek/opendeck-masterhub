@@ -2,7 +2,7 @@
 	"Name": "Cooler Master MasterHUB",
 	"Description": "Use Cooler Master MasterHUB modules with OpenDeck",
 	"Author": "Kamil Kobylarek",
-	"Version": "0.1.2",
+	"Version": "0.2.0",
 	"Icon": "icon",
 	"DeviceNamespace": "mh",
 	"HasSettingsInterface": true,
@@ -29,7 +29,7 @@
 	],
 	"Actions": [
 		{
-			"UUID": "com.masterhub.opendeck.clock",
+			"UUID": "pl.kobylarek.masterhub.clock",
 			"Name": "Clock",
 			"Tooltip": "Time and date; on the MasterHUB dial drawn full screen",
 			"Icon": "icons/clock",
@@ -52,7 +52,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.analogclock",
+			"UUID": "pl.kobylarek.masterhub.analogclock",
 			"Name": "Analog clock",
 			"Tooltip": "A clock face with hands; on the MasterHUB dial drawn full screen",
 			"Icon": "icons/analogclock",
@@ -75,7 +75,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.timer",
+			"UUID": "pl.kobylarek.masterhub.timer",
 			"Name": "Timer",
 			"Tooltip": "Countdown: turn to set (10 s steps), press to start/stop",
 			"Icon": "icons/timer",
@@ -97,7 +97,7 @@
 			}
 		},
 		{
-			"UUID": "com.masterhub.opendeck.cpu",
+			"UUID": "pl.kobylarek.masterhub.cpu",
 			"Name": "CPU load",
 			"Tooltip": "Processor load in percent",
 			"Icon": "icons/cpu",
@@ -120,7 +120,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.memory",
+			"UUID": "pl.kobylarek.masterhub.memory",
 			"Name": "Memory use",
 			"Tooltip": "Used RAM in percent",
 			"Icon": "icons/memory",
@@ -143,7 +143,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.cputemp",
+			"UUID": "pl.kobylarek.masterhub.cputemp",
 			"Name": "CPU temperature",
 			"Tooltip": "Hottest CPU sensor; '--' when the system exposes none",
 			"Icon": "icons/cputemp",
@@ -166,7 +166,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.gpu",
+			"UUID": "pl.kobylarek.masterhub.gpu",
 			"Name": "GPU load",
 			"Tooltip": "GPU load; on the MasterHUB dial drawn full screen",
 			"Icon": "icons/gpu",
@@ -189,7 +189,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.gputemp",
+			"UUID": "pl.kobylarek.masterhub.gputemp",
 			"Name": "GPU temperature",
 			"Tooltip": "GPU temperature (Windows and Linux); on the MasterHUB dial drawn full screen",
 			"Icon": "icons/gputemp",
@@ -212,7 +212,7 @@
 			"PropertyInspectorPath": "pi/info.html"
 		},
 		{
-			"UUID": "com.masterhub.opendeck.appvolume",
+			"UUID": "pl.kobylarek.masterhub.appvolume",
 			"Name": "App volume",
 			"Tooltip": "Volume of chosen apps (macOS through FineTune, Windows, Linux): a fader sets it, knobs step it, a press toggles mute",
 			"Icon": "icons/appvolume",
@@ -235,7 +235,7 @@
 			}
 		},
 		{
-			"UUID": "com.masterhub.opendeck.lighting",
+			"UUID": "pl.kobylarek.masterhub.lighting",
 			"Name": "LED lighting",
 			"Tooltip": "Turn the MasterHUB LEDs off / on, cycle or set their effect",
 			"Icon": "icons/lighting",
@@ -258,7 +258,7 @@
 			}
 		},
 		{
-			"UUID": "com.masterhub.opendeck.command",
+			"UUID": "pl.kobylarek.masterhub.command",
 			"Name": "Command",
 			"Tooltip": "Run a command with the fader's position ({value}) or the clicks turned ({ticks})",
 			"Icon": "icons/command",

@@ -1,5 +1,5 @@
 target/
-com.masterhub.opendeck.sdPlugin/bin/
+pl.kobylarek.masterhub.sdPlugin/bin/
 graphify-out/
 MasterHUB/
 .DS_Store

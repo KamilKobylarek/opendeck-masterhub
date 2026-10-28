@@ -4,13 +4,14 @@
 set -e
 cd "$(dirname "$0")"
 cargo build --release
-PLUGIN=com.masterhub.opendeck.sdPlugin
+PLUGIN=pl.kobylarek.masterhub.sdPlugin
 TRIPLE=$(rustc -vV | sed -n 's/^host: //p') # must match a key in manifest.json CodePaths
 mkdir -p "$PLUGIN/bin/$TRIPLE"
 cp target/release/opendeck-masterhub "$PLUGIN/bin/$TRIPLE/"
 install() {
   mkdir -p "$1"
-  rm -rf "$1/$PLUGIN"
+  # the plugin's folder before 0.2.0, under its old id: both would claim the same devices
+  rm -rf "$1/$PLUGIN" "$1/com.masterhub.opendeck.sdPlugin"
   cp -R "$PLUGIN" "$1/"
   echo "Installed to $1/$PLUGIN"
 }

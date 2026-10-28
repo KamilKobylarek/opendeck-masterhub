@@ -531,7 +531,7 @@ mod tests {
     fn docs_preview() {
         let icon = |name: &str| {
             let svg = std::fs::read(format!(
-                "{}/com.masterhub.opendeck.sdPlugin/icons/{name}.svg",
+                "{}/pl.kobylarek.masterhub.sdPlugin/icons/{name}.svg",
                 env!("CARGO_MANIFEST_DIR")
             ))
             .unwrap();

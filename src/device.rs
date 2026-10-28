@@ -109,9 +109,12 @@ pub(crate) fn run_module(
     // Animated background: the keys' images at window size for compositing, and where the animation is.
     let mut key_pixels: HashMap<u8, RgbImage> = HashMap::new();
     let (mut frame, mut next_frame) = (0usize, Instant::now());
+    let (mut frames_sent, mut frames_since) = (0u32, Instant::now()); // MASTERHUB_DEBUG: the rate reached
     let mut screen: Option<Vec<u8>> = None; // the dial's current picture, to put back after identify mode
                                             // Identify mode: until then the screens show numbers; what OpenDeck sends meanwhile is kept for later.
     let mut identify_until: Option<Instant> = None;
+    // OpenDeck's brightness 0 (e.g. its device sleep): screens black, what OpenDeck sends kept for later
+    let mut dark = false;
     // With a keypad background, a cleared key shows the background again: redraw it, then the keys.
     let redraw = |background: &Option<Arc<KeypadBackground>>,
                   key_images: &HashMap<u8, (Vec<u8>, Vec<u8>)>|
@@ -122,21 +125,33 @@ pub(crate) fn run_module(
         }
         key_images.iter().try_for_each(|(k, (jpeg, _))| write_image(device, 0x36, *k, jpeg, report_len))
     };
+    // the screen as OpenDeck last set it, after identify mode or a dark screen
+    let restore = |background: &Option<Arc<KeypadBackground>>,
+                   key_images: &HashMap<u8, (Vec<u8>, Vec<u8>)>,
+                   screen: &Option<Vec<u8>>|
+     -> hidapi::HidResult<()> {
+        match (kind, screen) {
+            (Kind::Keys, _) => redraw(background, key_images),
+            (Kind::Dial, Some(jpeg)) => write_image(device, 0x45, 0, jpeg, report_len),
+            (Kind::Dial, None) => send_feature(device, &[0x03, 0x46, 0, 0, 0]),
+            _ => Ok(()),
+        }
+    };
+    let black = || match kind {
+        Kind::Keys => send_feature(device, &[0x03, 0x36, 0, 0, 0]),
+        Kind::Dial => send_feature(device, &[0x03, 0x46, 0, 0, 0]),
+        _ => Ok(()),
+    };
     let mut buf = [0u8; 512];
     loop {
         if identify_until.is_some_and(|t| Instant::now() >= t) {
             identify_until = None;
-            let result = match (kind, &screen) {
-                (Kind::Keys, _) => redraw(&background, &key_images),
-                (Kind::Dial, Some(jpeg)) => write_image(device, 0x45, 0, jpeg, report_len),
-                (Kind::Dial, None) => send_feature(device, &[0x03, 0x46, 0, 0, 0]),
-                _ => Ok(()),
-            };
+            let result = if dark { black() } else { restore(&background, &key_images, &screen) };
             if let Err(e) = result {
                 eprintln!("{id}: write failed: {e}");
             }
         }
-        if let Some(bg) = background.as_ref().filter(|b| !b.frames.is_empty() && identify_until.is_none()) {
+        if let Some(bg) = background.as_ref().filter(|b| !b.frames.is_empty() && identify_until.is_none() && !dark) {
             if Instant::now() >= next_frame {
                 let (img, delay) = &bg.frames[frame % bg.frames.len()];
                 let result = to_jpeg(&DynamicImage::from(panel_frame(img, &key_pixels)))
@@ -145,7 +160,16 @@ pub(crate) fn run_module(
                 if let Err(e) = result {
                     eprintln!("{id}: write failed: {e}");
                 }
-                (frame, next_frame) = (frame + 1, Instant::now() + *delay);
+                // on schedule rather than from now, so the time a frame takes to send doesn't slow the animation
+                (frame, next_frame) = (frame + 1, (next_frame + *delay).max(Instant::now()));
+                frames_sent += 1;
+                if debug && frames_since.elapsed() >= Duration::from_secs(5) {
+                    eprintln!(
+                        "{id}: background {:.1} frames a second",
+                        frames_sent as f64 / frames_since.elapsed().as_secs_f64()
+                    );
+                    (frames_sent, frames_since) = (0, Instant::now());
+                }
             }
         }
         let waiting: Vec<Down> = down_rx.try_iter().collect();
@@ -165,7 +189,7 @@ pub(crate) fn run_module(
             if !keep {
                 continue;
             }
-            let identifying = identify_until.is_some();
+            let identifying = identify_until.is_some() || dark; // screen writes held back
             let result = match cmd {
                 Down::KeyImage { position, jpeg, pressed } => {
                     let (jpeg, pressed) = match upright(&shared, rot) {
@@ -249,9 +273,22 @@ pub(crate) fn run_module(
                     }
                 }
                 Down::Brightness(b) => match (kind, led_module(kind)) {
-                    // never 0: on macOS that times out and leaves the screen module dead
-                    (Kind::Keys, _) => send_feature(device, &[0x03, 0x34, b.clamp(1, 100)]),
-                    (Kind::Dial, _) => send_feature(device, &[0x03, 0x44, b.clamp(1, 100)]),
+                    // never 0: on macOS that times out and leaves the screen module dead. A black screen at the
+                    // lowest brightness instead, and the pictures back when the brightness is.
+                    (Kind::Keys | Kind::Dial, _) => {
+                        let cmd = if kind == Kind::Keys { 0x34 } else { 0x44 };
+                        let was_dark = std::mem::replace(&mut dark, b == 0);
+                        send_feature(device, &[0x03, cmd, b.clamp(1, 100)]).and_then(|()| {
+                            match (was_dark, dark, identify_until.is_some()) {
+                                (false, true, false) => black(),
+                                (true, false, false) => {
+                                    (frame, next_frame) = (0, Instant::now());
+                                    restore(&background, &key_images, &screen)
+                                }
+                                _ => Ok(()),
+                            }
+                        })
+                    }
                     (_, Some(m)) => write_m0(device, report_len, 0x2e, &[m, 0xff, b.min(100)]),
                     _ => Ok(()),
                 },
@@ -280,7 +317,11 @@ pub(crate) fn run_module(
             }
         }
 
-        match device.read_timeout(&mut buf, 20) {
+        // input waits at most until the next background frame is due
+        let animating = background.as_ref().is_some_and(|b| b.frames.len() > 1) && identify_until.is_none() && !dark;
+        let wait =
+            if animating { next_frame.saturating_duration_since(Instant::now()).as_millis().clamp(1, 20) } else { 20 };
+        match device.read_timeout(&mut buf, wait as i32) {
             Ok(0) => {}
             Ok(n) => {
                 if debug {
@@ -300,7 +341,7 @@ pub(crate) fn run_module(
                         return; // the plugin is going away
                     }
                     // The official app's press feedback; after the event so actions don't wait for it.
-                    if let (Kind::Keys, Some(k), None) = (kind, key, identify_until) {
+                    if let (Kind::Keys, Some(k), None, false) = (kind, key, identify_until, dark) {
                         if let Some((normal, pressed)) = key_images.get(&k) {
                             let jpeg = if event == "keyDown" { pressed } else { normal };
                             if let Err(e) = write_image(device, 0x36, k, jpeg, report_len) {

@@ -10,9 +10,21 @@ pub(crate) struct KeypadBackground {
     pub(crate) frames: Vec<(RgbImage, Duration)>,
 }
 
-/// Animation limits: a 15xKey fed pictures too fast can reset, so at most ~14 frames a second, well below what
-/// the module takes (~32 full-screen pictures a second).
-pub(crate) const MIN_FRAME: Duration = Duration::from_millis(70);
+/// Animation limits: the 15xKey shows ~32 full-screen pictures a second, every one of them (checked 2026-10-28:
+/// a 32-frame numbered GIF filmed at 120 fps, the plugin sending 31–32 a second, no frame missed, no reset).
+pub(crate) const MIN_FRAME: Duration = Duration::from_millis(31);
+
+/// The shortest a background frame stays: MIN_FRAME, or MASTERHUB_MIN_FRAME_MS (10–1000) set before OpenDeck
+/// starts, to try another rate on a module.
+pub(crate) fn min_frame() -> Duration {
+    static MIN: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *MIN.get_or_init(|| {
+        std::env::var("MASTERHUB_MIN_FRAME_MS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .map_or(MIN_FRAME, |ms| Duration::from_millis(ms.clamp(10, 1000)))
+    })
+}
 pub(crate) const MAX_FRAMES: usize = 300; // 480x272 RGB each, ~120 MB at most
 
 /// The keypad background, or None when unset or unreadable.
@@ -69,7 +81,7 @@ pub(crate) fn load_background(path: &str) -> Result<KeypadBackground, Box<dyn st
         decoder.set_limits(picture_limits())?;
         for frame in decoder.into_frames().take(MAX_FRAMES) {
             let frame = frame?;
-            let delay = Duration::from(frame.delay()).max(MIN_FRAME);
+            let delay = Duration::from(frame.delay()).max(min_frame());
             frames.push((fit(DynamicImage::ImageRgba8(frame.into_buffer())), delay));
         }
     }

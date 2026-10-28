@@ -22,8 +22,8 @@ jobs:
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --release --locked --target $t
-            mkdir -p com.masterhub.opendeck.sdPlugin/bin/$t
-            cp target/$t/release/opendeck-masterhub com.masterhub.opendeck.sdPlugin/bin/$t/
+            mkdir -p pl.kobylarek.masterhub.sdPlugin/bin/$t
+            cp target/$t/release/opendeck-masterhub pl.kobylarek.masterhub.sdPlugin/bin/$t/
           done
           sh ci/package.sh macos
       - name: upload

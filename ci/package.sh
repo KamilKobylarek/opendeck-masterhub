@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 NAME=${1:?usage: package.sh <name>}
-PLUGIN=com.masterhub.opendeck.sdPlugin
+PLUGIN=pl.kobylarek.masterhub.sdPlugin
 STAGE=$(mktemp -d)
 cp -R "$PLUGIN" "$STAGE/"
 if [ -n "$VERSION" ]; then

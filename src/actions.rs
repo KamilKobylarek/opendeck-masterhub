@@ -668,7 +668,7 @@ mod tests {
     use super::*;
 
     fn appear(action: &str, device: &str, controller: &str) -> Value {
-        json!({ "event": "willAppear", "action": format!("com.masterhub.opendeck.{action}"), "context": format!("{device}.P.{controller}.0.0"),
+        json!({ "event": "willAppear", "action": format!("pl.kobylarek.masterhub.{action}"), "context": format!("{device}.P.{controller}.0.0"),
                 "device": device, "payload": { "controller": controller, "coordinates": { "column": 0, "row": 0 }, "settings": {} } })
     }
 

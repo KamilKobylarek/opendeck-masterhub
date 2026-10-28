@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot)
 $tag = $env:GITHUB_REF_NAME
 if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "tag '$tag' is not a version like v1.2.3" }
-$plugin = 'com.masterhub.opendeck.sdPlugin'
+$plugin = 'pl.kobylarek.masterhub.sdPlugin'
 $zip = 'dist\opendeck-masterhub-windows.zip'
 
 if ($Step -eq 'build') {

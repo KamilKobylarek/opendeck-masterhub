@@ -14,15 +14,15 @@ mkdir -p dist
 # the source is mounted read-only and copied, so the host's target/ stays the host's
 docker run --rm $PLATFORM -e PACKAGE -e VERSION -v "$PWD":/src:ro -v "$PWD/dist":/dist rust:1-trixie bash -ec '
   apt-get update -qq && apt-get install -y -qq libudev-dev pkg-config zip >/dev/null
-  cp -r /src /work && cd /work && rm -rf target dist com.masterhub.opendeck.sdPlugin/bin
+  cp -r /src /work && cd /work && rm -rf target dist pl.kobylarek.masterhub.sdPlugin/bin
   rustup component add clippy >/dev/null
   cargo clippy --locked --all-targets -- -D warnings
   cargo test --locked
   cargo build --release --locked
   if [ -n "$PACKAGE" ]; then
     triple=$(rustc -vV | sed -n "s/^host: //p")
-    mkdir -p com.masterhub.opendeck.sdPlugin/bin/$triple
-    cp target/release/opendeck-masterhub com.masterhub.opendeck.sdPlugin/bin/$triple/
+    mkdir -p pl.kobylarek.masterhub.sdPlugin/bin/$triple
+    cp target/release/opendeck-masterhub pl.kobylarek.masterhub.sdPlugin/bin/$triple/
     sh ci/package.sh linux-${triple%%-*}
     cp dist/*.zip /dist/
   fi'

@@ -62,7 +62,7 @@ const WAKE_GAP: Duration = Duration::from_secs(10);
 /// How long the dial shows the function card after a press switched it.
 const DIAL_CARD_TIME: Duration = Duration::from_millis(1000);
 /// The "LED lighting" action (lights::lighting_action).
-const LIGHTING_UUID: &str = "com.masterhub.opendeck.lighting";
+const LIGHTING_UUID: &str = "pl.kobylarek.masterhub.lighting";
 /// Screens the "Dial screen" setting can pin on the dial (actions.rs names).
 const DIAL_SCREENS: [(&str, &str); 7] = [
     ("clock", "Clock"),
@@ -1067,6 +1067,10 @@ fn scan(api: &mut HidApi, modules: &mut HashMap<String, Handle>, base: &mut Base
     for info in infos {
         let Some(model) = MODELS.iter().find(|m| m.pids.contains(&info.product_id())) else { continue };
         let serial = info.serial_number().unwrap_or("");
+        if matches!(model.kind, Kind::Keys | Kind::Dial) && !serial.is_empty() && !plain_serial(serial) {
+            locked_up(model.name, &info.path().to_string_lossy());
+            continue; // registered, it would be a new device with a garbled id, and unusable
+        }
         // the serial as the device gives it, only its safe characters (the id goes into pages, topics, names)
         let safe: String =
             serial.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').take(64).collect();
@@ -1111,6 +1115,22 @@ fn scan(api: &mut HidApi, modules: &mut HashMap<String, Handle>, base: &mut Base
 }
 
 /// Registers one opened module with OpenDeck and starts its thread.
+/// A serial number as modules report it: ASCII letters and digits. A 15xKey or dial whose firmware locked up (a
+/// feature report read while it was in hardware mode) reports bytes of its last reply there instead.
+fn plain_serial(serial: &str) -> bool {
+    serial.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// A 15xKey or dial with locked-up firmware: said once per device; on macOS it's re-enumerated (at most once a
+/// minute), elsewhere only taking it off the base and putting it back helps.
+fn locked_up(name: &str, path: &str) {
+    static TOLD: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    if TOLD.lock().unwrap().get_or_insert_with(HashSet::new).insert(path.to_string()) {
+        eprintln!("{name}: its firmware is locked up (garbled serial number): take it off the base and put it back");
+    }
+    reset_stuck(&format!("locked {path}"), Some(path));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn register(
     device: HidDevice,
@@ -1475,6 +1495,14 @@ fn handle_opendeck(msg: &Value, modules: &HashMap<String, Handle>, base: &Base, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn garbled_serials_are_told_apart() {
+        assert!(plain_serial("MHKD15AA431251600773"));
+        // a locked-up module's reply bytes read as UTF-16
+        assert!(!plain_serial("\u{3230}\u{302e}\u{2e31}"));
+        assert!(!plain_serial("02.00.01.00"));
+    }
 
     #[test]
     fn settings_arriving_late_set_the_modules_up_again() {

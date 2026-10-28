@@ -22,7 +22,7 @@ import urllib.request
 import uuid
 import zipfile
 
-PLUGIN = "com.masterhub.opendeck.sdPlugin"
+PLUGIN = "pl.kobylarek.masterhub.sdPlugin"
 UNIVERSAL = "opendeck-masterhub.zip"
 # what the release jobs build; the universal zip must carry all of them
 TRIPLES = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",

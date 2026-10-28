@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use crate::audio::{self, Op};
 use crate::Up;
 
-pub const UUID: &str = "com.masterhub.opendeck.appvolume";
+pub const UUID: &str = "pl.kobylarek.masterhub.appvolume";
 
 /// Most apps one action drives.
 const MAX_APPS: usize = 10;

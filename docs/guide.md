@@ -82,8 +82,9 @@ either way, so actions stay where they are.
   5 rows, so the top-left key in OpenDeck is always the top-left key on the desk.
 - **Pictures**: each key shows its action's picture; a pressed key shows it shrunk, like a key going down.
   Key pictures aren't turned with the module unless **Turn pictures upright** is on ([Base](#base-1)).
-- **Brightness**: OpenDeck's brightness setting sets the module's screen brightness (1–100; never 0, which can
-  leave the module dark until it's replugged).
+- **Brightness**: OpenDeck's brightness setting sets the module's screen brightness. At 0 (also when OpenDeck
+  puts devices to sleep) the screen goes black and the pictures come back with the brightness; the module itself
+  is never sent 0, which can leave it dark until it's taken off the base.
 - **Background**: one picture, or an animated GIF, across the whole module behind the keys
   ([15xKey background](#15xkey-background)).
 
@@ -112,7 +113,7 @@ either way, so actions stay where they are.
 - **Screen**: the round 240 × 240 screen shows the turn action's picture, or what
   [The dial's screen shows](#knobs--dial) says; the plugin's screen actions draw it full screen
   ([gallery](#screens-clock-analog-clock-cpu-memory-temperatures-gpu)).
-- **Brightness**: OpenDeck's brightness setting sets the screen's.
+- **Brightness**: OpenDeck's brightness setting sets the screen's; at 0 it goes black, as on the 15xKey.
 - With functions, switching shows a card with the function's number (`F2`) for a second.
 
 ### 5xFader
@@ -290,7 +291,8 @@ doing.
 
 A picture behind the keys on the whole 15xKey (PNG, JPEG, … or an animated GIF), scaled to the module's
 480 × 272 screen. Keys without an action show it; keys with one show their picture in their place. A GIF plays
-at up to ~14 frames a second.
+at up to ~32 frames a second, what the 15xKey shows without missing a frame. To try another rate, set
+`MASTERHUB_MIN_FRAME_MS` (10–1000, the shortest a frame stays) before starting OpenDeck.
 
 - **Choose file…** copies the picture into the plugin's data folder and uses it at once
   (`~/Library/Application Support/opendeck-masterhub`, `%APPDATA%\opendeck-masterhub`,
@@ -531,7 +533,12 @@ mosquitto_pub -h homeassistant.local -u masterhub -P … -t masterhub/mh-0202-MH
 - **Sleep**: after the computer wakes, the plugin sets every module up again 2 s later (software mode, pictures,
   LEDs), like the official app: modules can come back in hardware mode.
 - **A stuck module** (a 15xKey or dial that doesn't confirm software mode): on macOS the plugin re-enumerates it
-  over USB as if it were replugged, at most once a minute.
+  over USB as if it were replugged, at most once a minute. Elsewhere that needs administrator rights, so the log
+  asks for the module to be taken off the base and put back.
+- **Locked-up firmware**: a 15xKey or dial asked for a feature report while in hardware mode can lock up until
+  it's taken off the base. Its USB serial number then reads as garbage; the plugin doesn't register such a
+  module (it would show up as a new device without your actions), says so in the log, and re-enumerates it on
+  macOS. The plugin itself only reads the modules' information once they're in software mode.
 - **Rollers on macOS**: the 2xRoller sends nothing until it gets the standard USB request SET_IDLE, which Windows
   and Linux send to every such device and macOS doesn't. The plugin sends it whenever the rollers connect; no
   admin rights needed ([details](macos-roller-set-idle.md)).
@@ -539,13 +546,18 @@ mosquitto_pub -h homeassistant.local -u masterhub -P … -t masterhub/mh-0202-MH
 
 ## Troubleshooting
 
-- **Logs**: the plugin writes to OpenDeck's log folder, file `plugins/com.masterhub.opendeck.sdPlugin.log`:
+- **Logs**: the plugin writes to OpenDeck's log folder, file `plugins/pl.kobylarek.masterhub.sdPlugin.log`:
   macOS `~/Library/Logs/opendeck/`, Windows `%APPDATA%\opendeck\logs\`, Linux `~/.local/share/opendeck/logs/`,
   Flatpak `~/.var/app/me.amankhanna.opendeck/data/opendeck/logs/`.
 - **More detail**: start OpenDeck with `MASTERHUB_DEBUG=1` set: the log then lists every HID interface found and
   every raw input packet.
 - **A 15xKey or dial stays blank**: another app holds it (often the official MasterHUB app). Close that app and
-  replug the module; the log says when a module didn't confirm software mode.
+  replug the module; the log says when a module didn't confirm software mode or locked up. On Windows,
+  `pnputil /restart-device "USB\VID_2516&PID_01FE\<serial>"` in an administrator terminal also restarts a 15xKey
+  without taking it off (`PID_0206` for the dial; the serial is in the [Modules](#modules) table).
+- **A module drops out for a moment on a press** (Windows plays its unplug sound; the log says `disconnected`),
+  even with no software running: a loose contact between the module and the base. Take the module off and put it
+  back firmly.
 - **A module sits or turns wrong in OpenDeck**: compare the [Placement](#placement) section with the desk; if the
   base's sensor misreads, set **Base rotation** by hand.
 - **Nothing on Linux**: the udev rule from the [README](../README.md#install) is needed once, then replug.
