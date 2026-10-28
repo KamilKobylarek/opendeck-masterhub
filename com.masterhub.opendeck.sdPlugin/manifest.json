@@ -1,7 +1,7 @@
 {
 	"Name": "Cooler Master MasterHUB",
 	"Description": "Use Cooler Master MasterHUB modules with OpenDeck",
-	"Author": "Kamil",
+	"Author": "Kamil Kobylarek",
 	"Version": "0.1.2",
 	"Icon": "icon",
 	"DeviceNamespace": "mh",
