@@ -97,6 +97,97 @@
 			}
 		},
 		{
+			"UUID": "pl.kobylarek.masterhub.stopwatch",
+			"Name": "Stopwatch",
+			"Tooltip": "Counts up: press to start / pause, hold the key (or turn while paused) to reset",
+			"Icon": "icons/stopwatch",
+			"States": [
+				{
+					"Image": "icons/stopwatch"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Start / pause",
+					"Rotate": "Reset (paused)"
+				}
+			}
+		},
+		{
+			"UUID": "pl.kobylarek.masterhub.counter",
+			"Name": "Counter",
+			"Tooltip": "A number: a press adds its step, holding the key resets; counters with the same label share it",
+			"Icon": "icons/counter",
+			"States": [
+				{
+					"Image": "icons/counter"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"PropertyInspectorPath": "pi/counter.html",
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Reset",
+					"Rotate": "Count"
+				}
+			}
+		},
+		{
+			"UUID": "pl.kobylarek.masterhub.output",
+			"Name": "Command output",
+			"Tooltip": "Shows the first line a command prints, run every few seconds; a press runs it now",
+			"Icon": "icons/output",
+			"States": [
+				{
+					"Image": "icons/output"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"PropertyInspectorPath": "pi/output.html",
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "Run now",
+					"Rotate": ""
+				}
+			}
+		},
+		{
+			"UUID": "pl.kobylarek.masterhub.mqtt",
+			"Name": "MQTT value",
+			"Tooltip": "Shows the last message on an MQTT topic (or a field of it), through the plugin's MQTT connection",
+			"Icon": "icons/mqtt",
+			"States": [
+				{
+					"Image": "icons/mqtt"
+				}
+			],
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"PropertyInspectorPath": "pi/mqtt.html",
+			"Encoder": {
+				"layout": "$A0",
+				"TriggerDescription": {
+					"Push": "",
+					"Rotate": ""
+				}
+			}
+		},
+		{
 			"UUID": "pl.kobylarek.masterhub.cpu",
 			"Name": "CPU load",
 			"Tooltip": "Processor load in percent",

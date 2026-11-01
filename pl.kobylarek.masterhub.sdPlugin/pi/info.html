@@ -6,7 +6,16 @@
   input, select { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 6px; }
   p { color: #9a9a9a; margin: 6px 0; line-height: 1.4; }
   code { color: #ccc; }
+  input[type=checkbox] { width: auto; margin-right: 6px; vertical-align: middle; }
 </style>
+<div id="graphRow" hidden>
+  <label><input type="checkbox" id="graph">Graph of the last 2 minutes</label>
+  <label for="alarmAbove">Alarm above</label>
+  <input id="alarmAbove" type="number" step="any" placeholder="optional, e.g. 90">
+  <label for="alarmBelow">Alarm below</label>
+  <input id="alarmBelow" type="number" step="any" placeholder="optional">
+  <p>Past a limit the screen flashes red every other second (a knob's or fader's LED follows it).</p>
+</div>
 <label for="press">On press</label>
 <select id="press">
   <option value="">Nothing</option>
@@ -46,6 +55,22 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionIn
   platform = (JSON.parse(info).application || {}).platform || 'mac';
   const settings = JSON.parse(actionInfo).payload.settings || {};
   for (const f of fields) f.value = settings[f.id] || '';
+  // the clocks have no value to draw
+  const graph = document.getElementById('graph');
+  document.getElementById('graphRow').hidden = /clock$/.test(JSON.parse(actionInfo).action || '');
+  graph.checked = settings.graph === true;
+  graph.addEventListener('change', () => {
+    settings.graph = graph.checked;
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: 'setSettings', context, payload: settings }));
+  });
+  for (const id of ['alarmAbove', 'alarmBelow']) {
+    const f = document.getElementById(id);
+    f.value = settings[id] ?? '';
+    f.addEventListener('input', () => {
+      settings[id] = f.value;
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: 'setSettings', context, payload: settings }));
+    });
+  }
   show();
   socket = new WebSocket(`ws://127.0.0.1:${port}`);
   socket.onopen = () => socket.send(JSON.stringify({ event: registerEvent, uuid }));
@@ -59,7 +84,7 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionIn
       show();
       if (socket.readyState !== WebSocket.OPEN) return;
       // keep the screen chosen by "next screen" presses
-      socket.send(JSON.stringify({ event: 'setSettings', context, payload: { ...settings, press: fields[0].value, target: fields[1].value } }));
+      socket.send(JSON.stringify({ event: 'setSettings', context, payload: Object.assign(settings, { press: fields[0].value, target: fields[1].value }) }));
     });
   }
 }

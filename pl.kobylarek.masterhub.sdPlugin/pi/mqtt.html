@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; color: #d8d8d8; background: transparent; margin: 0; padding: 8px; }
+  label { display: block; margin: 8px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 6px; }
+  p { color: #9a9a9a; margin: 6px 0; line-height: 1.4; }
+  code { color: #ccc; }
+  input[type=checkbox] { width: auto; margin-right: 6px; vertical-align: middle; }
+</style>
+<label for="topic">Topic</label>
+<input id="topic" placeholder="home/livingroom/temperature">
+<p>The last message on it is shown, through the MQTT connection set on the plugin's settings page (Home
+  Assistant (MQTT)); a retained one right away. One exact topic, no <code>+</code> or <code>#</code>.</p>
+<label for="field">JSON field</label>
+<input id="field" placeholder="optional: temperature, or sensor.temperature">
+<p>For a JSON message: the value to show. Empty: the message's first line.</p>
+<label for="label">Label</label>
+<input id="label" placeholder="optional">
+<label for="unit">Unit</label>
+<input id="unit" placeholder="optional: °, %">
+<p>In capitals; longer than 12 characters it moves along. <code>--</code> until a message arrives.</p>
+<label for="size">Text size</label>
+<select id="size">
+  <option value="">Auto: as large as fits</option>
+  <option value="3">Small</option>
+  <option value="5">Medium</option>
+  <option value="7">Large</option>
+  <option value="10">Huge</option>
+</select>
+<p>Text wider than the screen at that size moves along.</p>
+<label for="alarmAbove">Alarm above</label>
+<input id="alarmAbove" type="number" step="any" placeholder="optional, e.g. 90">
+<label for="alarmBelow">Alarm below</label>
+<input id="alarmBelow" type="number" step="any" placeholder="optional">
+<p>Past a limit the screen flashes red every other second (a knob's or fader's LED follows it).</p>
+<label><input type="checkbox" id="graph">Graph of the last 2 minutes</label>
+<p>For a number: from its lowest to its highest value in that time.</p>
+<script>
+// Stream Deck property inspector protocol, which OpenDeck implements.
+const fields = ["topic", "field", "label", "unit", "size", "alarmAbove", "alarmBelow"].map((id) => document.getElementById(id));
+let socket, context;
+function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+  context = uuid;
+  const settings = JSON.parse(actionInfo).payload.settings || {};
+  for (const f of fields) f.value = settings[f.id] ?? "";
+  const graph = document.getElementById("graph");
+  graph.checked = settings.graph === true;
+  graph.addEventListener("change", () => {
+    settings.graph = graph.checked;
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: "setSettings", context, payload: settings }));
+  });
+  socket = new WebSocket(`ws://127.0.0.1:${port}`);
+  socket.onopen = () => socket.send(JSON.stringify({ event: registerEvent, uuid }));
+  for (const f of fields) {
+    f.addEventListener("input", () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      for (const x of fields) settings[x.id] = x.value;
+      socket.send(JSON.stringify({ event: "setSettings", context, payload: settings }));
+    });
+  }
+}
+</script>

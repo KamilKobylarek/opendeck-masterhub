@@ -108,6 +108,9 @@ pub(crate) fn run_module(
     let mut background: Option<Arc<KeypadBackground>> = None;
     // Animated background: the keys' images at window size for compositing, and where the animation is.
     let mut key_pixels: HashMap<u8, RgbImage> = HashMap::new();
+    // each background frame with the keys in it, as sent: made once, again only after a key or the background
+    // changes (at ~32 frames a second, composing and encoding every frame anew costs real CPU)
+    let mut frame_jpegs: Vec<Option<Vec<u8>>> = Vec::new();
     let (mut frame, mut next_frame) = (0usize, Instant::now());
     let (mut frames_sent, mut frames_since) = (0u32, Instant::now()); // MASTERHUB_DEBUG: the rate reached
     let mut screen: Option<Vec<u8>> = None; // the dial's current picture, to put back after identify mode
@@ -153,10 +156,17 @@ pub(crate) fn run_module(
         }
         if let Some(bg) = background.as_ref().filter(|b| !b.frames.is_empty() && identify_until.is_none() && !dark) {
             if Instant::now() >= next_frame {
-                let (img, delay) = &bg.frames[frame % bg.frames.len()];
-                let result = to_jpeg(&DynamicImage::from(panel_frame(img, &key_pixels)))
-                    .map_err(|e| hidapi::HidError::HidApiError { message: e.to_string() })
-                    .and_then(|jpeg| write_image(device, 0x35, 0, &jpeg, report_len));
+                let i = frame % bg.frames.len();
+                let (img, delay) = &bg.frames[i];
+                frame_jpegs.resize(bg.frames.len(), None);
+                if frame_jpegs[i].is_none() {
+                    match to_jpeg(&DynamicImage::from(panel_frame(img, &key_pixels))) {
+                        Ok(jpeg) => frame_jpegs[i] = Some(jpeg),
+                        Err(e) => eprintln!("{id}: background frame: {e}"),
+                    }
+                }
+                let result =
+                    frame_jpegs[i].as_ref().map_or(Ok(()), |jpeg| write_image(device, 0x35, 0, jpeg, report_len));
                 if let Err(e) = result {
                     eprintln!("{id}: write failed: {e}");
                 }
@@ -196,13 +206,17 @@ pub(crate) fn run_module(
                         true => (turn_jpeg(&jpeg, rot), turn_jpeg(&pressed, rot)),
                         false => (jpeg, pressed),
                     };
-                    let r = if identifying { Ok(()) } else { write_image(device, 0x36, position, &jpeg, report_len) };
-                    if let Ok(img) = image::load_from_memory(&jpeg) {
-                        key_pixels.insert(
-                            position,
-                            img.resize_exact(KEY_WINDOW.0, KEY_WINDOW.1, image::imageops::FilterType::Triangle)
-                                .to_rgb8(),
-                        );
+                    // An animated background draws the keys into its frames: only there, at once. The module's own
+                    // key picture is a pixel larger than the frame's window, so both would flicker by a pixel.
+                    let r = if identifying || animated(&background) {
+                        next_frame = Instant::now();
+                        Ok(())
+                    } else {
+                        write_image(device, 0x36, position, &jpeg, report_len)
+                    };
+                    frame_jpegs.clear();
+                    if let Some(img) = window_pixels(&jpeg) {
+                        key_pixels.insert(position, img);
                     }
                     key_images.insert(position, (jpeg, pressed));
                     r
@@ -247,6 +261,7 @@ pub(crate) fn run_module(
                 // during identify mode only remembered: its end redraws the keys
                 Down::Background(bg) => {
                     background = bg;
+                    frame_jpegs.clear();
                     (frame, next_frame) = (0, Instant::now());
                     if identifying {
                         Ok(())
@@ -257,6 +272,7 @@ pub(crate) fn run_module(
                 Down::KeyColor { position: Some(p), rgb } => {
                     key_images.remove(&p);
                     key_pixels.remove(&p);
+                    frame_jpegs.clear();
                     match background {
                         _ if identifying => Ok(()),
                         Some(_) => redraw(&background, &key_images),
@@ -266,6 +282,7 @@ pub(crate) fn run_module(
                 Down::KeyColor { position: None, rgb } => {
                     key_images.clear();
                     key_pixels.clear();
+                    frame_jpegs.clear();
                     match background {
                         _ if identifying => Ok(()),
                         Some(_) => redraw(&background, &key_images),
@@ -344,7 +361,14 @@ pub(crate) fn run_module(
                     if let (Kind::Keys, Some(k), None, false) = (kind, key, identify_until, dark) {
                         if let Some((normal, pressed)) = key_images.get(&k) {
                             let jpeg = if event == "keyDown" { pressed } else { normal };
-                            if let Err(e) = write_image(device, 0x36, k, jpeg, report_len) {
+                            if animated(&background) {
+                                // in the background's next frame, like the key's picture
+                                if let Some(img) = window_pixels(jpeg) {
+                                    key_pixels.insert(k, img);
+                                    frame_jpegs.clear();
+                                    next_frame = Instant::now();
+                                }
+                            } else if let Err(e) = write_image(device, 0x36, k, jpeg, report_len) {
                                 eprintln!("{id}: write failed: {e}");
                             }
                         }
@@ -572,6 +596,17 @@ pub(crate) fn write_image(
         std::thread::sleep(Duration::from_millis(100));
         send()
     })
+}
+
+/// Whether the 15xKey's background is an animation, whose frames carry the keys' pictures.
+fn animated(background: &Option<Arc<KeypadBackground>>) -> bool {
+    background.as_ref().is_some_and(|b| !b.frames.is_empty())
+}
+
+/// A key's picture at the size of its window in a background frame.
+fn window_pixels(jpeg: &[u8]) -> Option<image::RgbImage> {
+    let img = image::load_from_memory(jpeg).ok()?;
+    Some(img.resize_exact(KEY_WINDOW.0, KEY_WINDOW.1, image::imageops::FilterType::Triangle).to_rgb8())
 }
 
 /// Watches the base's orientation (it only changes when someone turns the base, so poll slowly)

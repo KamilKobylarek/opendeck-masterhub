@@ -8,6 +8,9 @@
 //! computer is opened to the network. With TLS and a CA file only a broker with a certificate from that CA is
 //! trusted; without a CA file, the system's certificates. A broker going away is retried by rumqttc; HA shows the
 //! lights unavailable through the will message.
+//!
+//! The other way, it subscribes to the topics the MQTT value actions show and keeps their last message
+//! (`Config::mqtt_values`).
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
@@ -557,6 +560,7 @@ pub fn start(shared: Shared, up: Sender<Up>) {
             let gone: Vec<String> = {
                 let mut cfg = shared.write().unwrap();
                 let flashes: Vec<String> = cfg.mqtt_flashes.drain().map(|(k, _)| k).collect();
+                cfg.mqtt_values.clear(); // not up to date any more
                 cfg.mqtt_lights.drain().map(|(k, _)| k).chain(flashes).collect()
             };
             for led in gone {
@@ -613,10 +617,13 @@ fn session(shared: &Shared, up: &Sender<Up>, s: &Settings, options: MqttOptions,
     let mut remembered: BTreeSet<String> = BTreeSet::new();
     let mut connected = false;
     let mut last_check = Instant::now();
+    // the MQTT value actions' topics subscribed to
+    let mut reading: BTreeSet<String> = BTreeSet::new();
     loop {
         match events.recv_timeout(Duration::from_millis(500)) {
             Ok(Ok(Event::Incoming(Packet::ConnAck(ack)))) if ack.code == ConnectReturnCode::Success => {
                 connected = true;
+                reading.clear(); // a clean session: subscribe again
                 announced.clear(); // a new session: announce everything again
                 published_software = Value::Null;
                 status(format!("Connected to {}:{}{}.", s.host, s.port, if s.tls { " (TLS)" } else { "" }));
@@ -634,6 +641,11 @@ fn session(shared: &Shared, up: &Sender<Up>, s: &Settings, options: MqttOptions,
                 status(format!("Connected to {}:{}, but the broker refused a subscription (its access rules): Home Assistant's commands won't arrive.", s.host, s.port));
             }
             Ok(Ok(Event::Incoming(Packet::Publish(p)))) => 'publish: {
+                if reading.contains(&p.topic) {
+                    // at most 1 KB of it: a value to show, not a document
+                    let text = String::from_utf8_lossy(&p.payload[..p.payload.len().min(1024)]).into_owned();
+                    shared.write().unwrap().mqtt_values.insert(p.topic.clone(), text);
+                }
                 if p.topic == format!("{}/status", s.discovery) {
                     if &p.payload[..] == b"online" {
                         announced.clear(); // Home Assistant restarted: announce again
@@ -695,6 +707,18 @@ fn session(shared: &Shared, up: &Sender<Up>, s: &Settings, options: MqttOptions,
         }
         if !connected {
             continue;
+        }
+        let wanted = shared.read().unwrap().mqtt_topics.clone();
+        for t in wanted.difference(&reading).cloned().collect::<Vec<_>>() {
+            match client.try_subscribe(t.clone(), QoS::AtMostOnce) {
+                Ok(()) => _ = reading.insert(t),
+                Err(e) => eprintln!("MQTT: subscribing to {t}: {e}"),
+            }
+        }
+        for t in reading.difference(&wanted).cloned().collect::<Vec<_>>() {
+            let _ = client.try_unsubscribe(t.clone());
+            reading.remove(&t);
+            shared.write().unwrap().mqtt_values.remove(&t);
         }
         if software != published_software {
             let (t, config) = plugin_discovery(s);
@@ -1082,6 +1106,47 @@ mod tests {
         let status = shared.read().unwrap().mqtt_status.clone();
         println!("wrong password: {status}");
         assert!(!status.starts_with("Connected"), "{status}");
+        shared.write().unwrap().mqtt.enabled = false;
+    }
+
+    /// The MQTT value actions' topics against any broker that lets anyone in, e.g.
+    /// `docker run -d -p 18885:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf`, then
+    /// `MQTT_PLAIN=localhost:18885 cargo test values_from_a_broker -- --ignored`
+    #[test]
+    #[ignore]
+    fn values_from_a_broker() {
+        let plain = std::env::var("MQTT_PLAIN").expect("MQTT_PLAIN");
+        let (host, port) = plain.rsplit_once(':').unwrap();
+        let port: u16 = port.parse().unwrap();
+        // a retained value already there, and one sent while the plugin reads
+        let (publisher, mut connection) = Client::new(MqttOptions::new("mh-values-test", host, port), 16);
+        std::thread::spawn(move || for _ in connection.iter() {});
+        publisher.publish("mhvalues/room", QoS::AtLeastOnce, true, r#"{"temp":21.5}"#).unwrap();
+        let mut cfg = crate::Config::new();
+        cfg.mqtt =
+            Settings { enabled: true, host: host.into(), port, prefix: "mhvalues".into(), ..Settings::default() };
+        cfg.mqtt_topics = BTreeSet::from(["mhvalues/room".to_string(), "mhvalues/song".to_string()]);
+        let shared: Shared = Arc::new(std::sync::RwLock::new(cfg));
+        start(shared.clone(), mpsc::channel().0);
+        let value = |topic: &str| {
+            let started = Instant::now();
+            loop {
+                if let Some(v) = shared.read().unwrap().mqtt_values.get(topic) {
+                    return v.clone();
+                }
+                assert!(started.elapsed() < Duration::from_secs(10), "no message on {topic}");
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        };
+        assert_eq!(value("mhvalues/room"), r#"{"temp":21.5}"#);
+        std::thread::sleep(Duration::from_secs(2)); // subscribed by now
+        publisher.publish("mhvalues/song", QoS::AtLeastOnce, false, "Daft Punk - One More Time").unwrap();
+        assert_eq!(value("mhvalues/song"), "Daft Punk - One More Time");
+        // a topic no action reads any more: unsubscribed, its value dropped
+        shared.write().unwrap().mqtt_topics.remove("mhvalues/song");
+        std::thread::sleep(Duration::from_secs(2));
+        assert!(!shared.read().unwrap().mqtt_values.contains_key("mhvalues/song"));
+        publisher.publish("mhvalues/room", QoS::AtLeastOnce, true, "").unwrap(); // clear the retained one
         shared.write().unwrap().mqtt.enabled = false;
     }
 

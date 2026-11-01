@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; color: #d8d8d8; background: transparent; margin: 0; padding: 8px; }
+  label { display: block; margin: 8px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 6px; }
+  p { color: #9a9a9a; margin: 6px 0; line-height: 1.4; }
+  code { color: #ccc; }
+</style>
+<label for="label">Label</label>
+<input id="label" placeholder="DEATHS">
+<p>Shown above the number. Counters with the same label share one number: a key with step 1, another with
+  step -1 and the dial showing it.</p>
+<label for="step">Step</label>
+<input id="step" type="number" placeholder="1">
+<p>What a press or a click of a knob adds; negative counts down. Holding the key (or pressing the dial) resets
+  it to 0.</p>
+<label for="size">Text size</label>
+<select id="size">
+  <option value="">Auto: as large as fits</option>
+  <option value="3">Small</option>
+  <option value="5">Medium</option>
+  <option value="7">Large</option>
+  <option value="10">Huge</option>
+</select>
+<p>Text wider than the screen at that size moves along.</p>
+<label for="goal">Goal</label>
+<input id="goal" type="number" min="1" placeholder="optional, e.g. 50">
+<p>Shows <code>17/50</code> with a bar, green once reached.</p>
+<script>
+// Stream Deck property inspector protocol, which OpenDeck implements.
+const fields = ["label", "step", "goal", "size"].map((id) => document.getElementById(id));
+let socket, context;
+function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+  context = uuid;
+  const settings = JSON.parse(actionInfo).payload.settings || {};
+  for (const f of fields) f.value = settings[f.id] ?? "";
+  socket = new WebSocket(`ws://127.0.0.1:${port}`);
+  socket.onopen = () => socket.send(JSON.stringify({ event: registerEvent, uuid }));
+  // the plugin changes the settings too (the count): keep up with them
+  socket.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.event === "didReceiveSettings" && msg.context === context) Object.assign(settings, msg.payload.settings || {});
+  };
+  for (const f of fields) {
+    f.addEventListener("input", () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      for (const x of fields) settings[x.id] = x.value;
+      socket.send(JSON.stringify({ event: "setSettings", context, payload: settings }));
+    });
+  }
+}
+</script>

@@ -102,6 +102,13 @@ struct Config {
     acceleration: bool,
     /// What the dial's screen shows whatever its actions ("cpu", "clock", …); None: its turn action.
     dial_screen: Option<String>,
+    /// The dial shows the picture of the knob, fader or roller being turned for a moment.
+    dial_osd: bool,
+    /// The dial's screen set here draws a graph (CPU, memory, temperatures, GPU).
+    dial_graph: bool,
+    /// Minutes without input before the 15xKey and dial screens go dark (0: never), and whether they are.
+    screens_off_after: u16,
+    asleep: bool,
     /// The placement view: the plugin's drawing, or the official app's pictures.
     placement_pictures: bool,
     /// Turn key and dial pictures against the module's rotation so they stand upright (the official app doesn't).
@@ -124,6 +131,9 @@ struct Config {
     mqtt_lights: mqtt::Lights,
     mqtt_flashes: HashMap<String, mqtt::Flash>,
     mqtt_status: String,
+    /// Topics the MQTT value actions read, and the last message on each (mqtt.rs subscribes to them).
+    mqtt_topics: std::collections::BTreeSet<String>,
+    mqtt_values: HashMap<String, String>,
 }
 
 impl Config {
@@ -137,6 +147,10 @@ impl Config {
             base_rotation: None,
             acceleration: false,
             dial_screen: None,
+            dial_osd: true,
+            dial_graph: false,
+            screens_off_after: 0,
+            asleep: false,
             placement_pictures: false,
             upright: false,
             modules: Vec::new(),
@@ -152,6 +166,8 @@ impl Config {
             mqtt_lights: HashMap::new(),
             mqtt_flashes: HashMap::new(),
             mqtt_status: String::new(),
+            mqtt_topics: Default::default(),
+            mqtt_values: HashMap::new(),
         }
     }
 
@@ -165,12 +181,15 @@ impl Config {
         self.dial_screen =
             v["dialScreen"].as_str().filter(|s| DIAL_SCREENS.iter().any(|(k, _)| k == s)).map(str::to_string);
         self.upright = v["upright"].as_bool().unwrap_or(false);
+        self.dial_osd = v["dialOsd"].as_bool().unwrap_or(true);
+        self.dial_graph = v["dialGraph"].as_bool().unwrap_or(false);
+        self.screens_off_after = v["screensOffAfter"].as_u64().map_or(0, |m| m.min(1440) as u16);
         self.base_rotation = v["baseRotation"].as_u64().map(|r| r as u16).filter(|r| [0, 90, 180, 270].contains(r));
         self.mqtt = mqtt::Settings::from_json(&v["mqtt"]);
     }
 
     fn to_json(&self) -> Value {
-        json!({ "faderScale": self.fader_scale, "lights": self.lights.to_json(), "functions": self.functions, "keypadBackground": self.keypad_background, "baseRotation": self.base_rotation, "acceleration": self.acceleration, "dialScreen": self.dial_screen, "placementPictures": self.placement_pictures, "upright": self.upright, "mqtt": self.mqtt.to_json() })
+        json!({ "faderScale": self.fader_scale, "lights": self.lights.to_json(), "functions": self.functions, "keypadBackground": self.keypad_background, "baseRotation": self.base_rotation, "acceleration": self.acceleration, "dialScreen": self.dial_screen, "dialOsd": self.dial_osd, "dialGraph": self.dial_graph, "screensOffAfter": self.screens_off_after, "placementPictures": self.placement_pictures, "upright": self.upright, "mqtt": self.mqtt.to_json() })
     }
 
     fn forget(&mut self, id: &str) {
@@ -400,8 +419,12 @@ fn main() {
     let mut last_wall = std::time::SystemTime::now();
     let mut last_awake = awake_now();
     let mut wake_at: Option<Instant> = None;
-    // Dials showing their function card, until when.
+    let mut last_input = Instant::now();
+    let mut last_scroll = Instant::now(); // long text on our screens moves along
+                                          // Dials showing their function card, until when.
     let mut dial_cards: HashMap<String, Instant> = HashMap::new();
+    // Dials whose card is a turned control's picture: which control ("<device>/<slot>").
+    let mut dial_osd: HashMap<String, String> = HashMap::new();
     // Dial slots whose screen App volume draws ("<device>/<slot>"), and the screen App volume picked per dial.
     let mut volume_dials: HashSet<String> = HashSet::new();
     let mut action_screens: HashMap<String, String> = HashMap::new();
@@ -429,14 +452,24 @@ fn main() {
             let plugin_screen = shared.read().unwrap().dial_screen.clone();
             let screens: Vec<(String, Option<String>)> =
                 dials.iter().map(|d| (d.clone(), action_screens.get(d).cloned().or(plugin_screen.clone()))).collect();
-            actions.pin_dials(&screens);
+            actions.pin_dials(&screens, shared.read().unwrap().dial_graph);
             // unpinned: the dial shows its own function again
             for (d, _) in dials.iter().zip(was_pinned).filter(|(d, was)| *was && !actions.pinned(d)) {
                 if let Some(h) = modules.get(d) {
                     show_dial(d, h, &slots);
                 }
             }
+            {
+                let mut cfg = shared.write().unwrap();
+                cfg.mqtt_topics = actions.topics();
+                actions.mqtt_values.clone_from(&cfg.mqtt_values);
+            }
             let outs = actions.tick(|d| is_dial(&modules, d));
+            deliver(outs, &mut ws, &modules, &mut slots);
+        }
+        if last_scroll.elapsed() >= actions::SCROLL_STEP {
+            last_scroll = Instant::now();
+            let outs = actions.scroll(|d| is_dial(&modules, d));
             deliver(outs, &mut ws, &modules, &mut slots);
         }
         // After sleep the modules may be back in hardware mode with their pictures gone: register them again
@@ -455,6 +488,21 @@ fn main() {
         if wake_at.is_some_and(|t| Instant::now() >= t) {
             wake_at = None;
             let _ = up_tx.send(Up::Reorient);
+        }
+        // screens dark after a while without input (an LCD keeps a still picture otherwise)
+        {
+            let (after, asleep) = {
+                let cfg = shared.read().unwrap();
+                (cfg.screens_off_after, cfg.asleep)
+            };
+            if asleep && after == 0 {
+                wake(&modules, &shared);
+            } else if !asleep && after > 0 && last_input.elapsed() >= Duration::from_secs(after as u64 * 60) {
+                shared.write().unwrap().asleep = true;
+                for h in modules.values().filter(|h| matches!(h.kind, Kind::Keys | Kind::Dial)) {
+                    let _ = h.tx.send(Down::Brightness(0)); // a black screen, as at brightness 0
+                }
+            }
         }
         dial_cards.retain(|id, until| {
             let showing = Instant::now() < *until;
@@ -480,6 +528,18 @@ fn main() {
         loop {
             match up_rx.try_recv() {
                 Ok(Up::Send(mut msg)) => {
+                    // a touch of a module (not the plugin's own messages to OpenDeck)
+                    let touch = matches!(
+                        msg["event"].as_str(),
+                        Some("keyDown" | "keyUp" | "encoderChange" | "encoderDown" | "encoderUp")
+                    );
+                    if touch {
+                        last_input = Instant::now();
+                        if shared.read().unwrap().asleep {
+                            wake(&modules, &shared);
+                            continue; // the touch that wakes the screens does nothing else
+                        }
+                    }
                     if let Some(v) = msg["payload"].as_object_mut().and_then(|p| p.remove("value")) {
                         let (device, position) = (
                             msg["payload"]["device"].as_str().unwrap_or_default(),
@@ -513,7 +573,24 @@ fn main() {
                     if msg["event"] == "encoderChange" && shared.read().unwrap().acceleration {
                         accelerate(&mut msg, &modules, &mut last_turns);
                     }
+                    let turned = msg["payload"]["device"]
+                        .as_str()
+                        .filter(|d| {
+                            msg["event"] == "encoderChange"
+                                && modules
+                                    .get(*d)
+                                    .is_some_and(|h| matches!(h.kind, Kind::Knobs | Kind::Faders | Kind::Rollers))
+                        })
+                        .map(str::to_string);
                     let (msgs, switched) = route_input(msg, &mut modules, &slots);
+                    if let (Some(device), true) = (turned, shared.read().unwrap().dial_osd) {
+                        for m in msgs.iter().filter(|m| m["event"] == "encoderChange") {
+                            let key = format!("{device}/{}", m["payload"]["position"]);
+                            if let Some(jpeg) = slots.screens.get(&key) {
+                                show_osd(&key, jpeg, &modules, |d| actions.pinned(d), &mut dial_cards, &mut dial_osd);
+                            }
+                        }
+                    }
                     for m in msgs {
                         post(&mut ws, &m);
                     }
@@ -525,6 +602,7 @@ fn main() {
                                 let _ =
                                     h.tx.send(Down::ScreenImage(actions::card_jpeg(&format!("F{}", h.active[0] + 1))));
                                 dial_cards.insert(id.clone(), Instant::now() + DIAL_CARD_TIME);
+                                dial_osd.remove(id);
                             }
                             _ => push_module_lights(id, h, &shared.read().unwrap(), false),
                         }
@@ -795,7 +873,19 @@ fn main() {
                                 msg["position"]
                             ));
                         }
-                        _ => handle_opendeck(&msg, &modules, &base, &shared, &mut slots),
+                        _ => {
+                            handle_opendeck(&msg, &modules, &base, &shared, &mut slots);
+                            // a new picture for the control a dial is showing (its value changed): show it there too
+                            let key = format!("{}/{}", msg["device"].as_str().unwrap_or_default(), msg["position"]);
+                            if let (Some("setImage"), Some(jpeg)) = (msg["event"].as_str(), slots.screens.get(&key)) {
+                                for (d, _) in dial_osd.iter().filter(|(d, k)| **k == key && dial_cards.contains_key(*d))
+                                {
+                                    if let Some(h) = modules.get(d) {
+                                        let _ = h.tx.send(Down::ScreenImage(jpeg.clone()));
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -937,6 +1027,18 @@ fn deliver(outs: Vec<actions::Out>, ws: &mut Ws, modules: &HashMap<String, Handl
     }
 }
 
+/// Lights the 15xKey and dial screens again at OpenDeck's brightness after they went dark for lack of input.
+fn wake(modules: &HashMap<String, Handle>, shared: &Shared) {
+    let b = {
+        let mut cfg = shared.write().unwrap();
+        cfg.asleep = false;
+        cfg.led_brightness
+    };
+    for h in modules.values().filter(|h| matches!(h.kind, Kind::Keys | Kind::Dial)) {
+        let _ = h.tx.send(Down::Brightness(b));
+    }
+}
+
 /// Shows the dial's current function: its last screen, or black.
 fn show_dial(id: &str, h: &Handle, slots: &Slots) {
     let cmd = slots
@@ -945,6 +1047,25 @@ fn show_dial(id: &str, h: &Handle, slots: &Slots) {
         .cloned()
         .map_or(Down::ScreenColour([0, 0, 0]), Down::ScreenImage);
     let _ = h.tx.send(cmd);
+}
+
+/// Shows a turned control's picture on every dial not pinned to a screen for DIAL_CARD_TIME; while it's
+/// there, more turns of the same control only keep it longer.
+fn show_osd(
+    key: &str,
+    jpeg: &[u8],
+    modules: &HashMap<String, Handle>,
+    pinned: impl Fn(&str) -> bool,
+    cards: &mut HashMap<String, Instant>,
+    osd: &mut HashMap<String, String>,
+) {
+    for (id, h) in modules.iter().filter(|(id, h)| h.kind == Kind::Dial && !pinned(id)) {
+        if !cards.contains_key(id) || osd.get(id).map(String::as_str) != Some(key) {
+            let _ = h.tx.send(Down::ScreenImage(jpeg.to_vec()));
+            osd.insert(id.clone(), key.to_string());
+        }
+        cards.insert(id.clone(), Instant::now() + DIAL_CARD_TIME);
+    }
 }
 
 /// Acceleration: a click within 40 ms of the last one on the same knob, roller or dial counts 3 times, within
@@ -1415,6 +1536,16 @@ fn handle_opendeck(msg: &Value, modules: &HashMap<String, Handle>, base: &Base, 
             (None, _) => slots.forget(id),
             (Some("Encoder"), Some(p)) if image.is_some() => {
                 slots.occupied.insert(format!("{id}/{p}"));
+                // kept for the dial to show while the control turns
+                if matches!(h.kind, Kind::Knobs | Kind::Faders | Kind::Rollers) {
+                    match image.map(to_screen_jpeg) {
+                        Some(Ok(jpeg)) => {
+                            slots.screens.insert(format!("{id}/{p}"), jpeg);
+                        }
+                        Some(Err(e)) => eprintln!("bad image for {id}/{p}: {e}"),
+                        None => {}
+                    }
+                }
             }
             (Some("Encoder"), Some(p)) => {
                 slots.occupied.remove(&format!("{id}/{p}"));
@@ -1474,16 +1605,19 @@ fn handle_opendeck(msg: &Value, modules: &HashMap<String, Handle>, base: &Base, 
         (Some("setBrightness"), _, kind) => {
             let b = msg["brightness"].as_u64().unwrap_or(100) as u8;
             // LED brightness only once the plugin manages the lighting; screens always follow OpenDeck.
-            let managed = {
+            let (managed, asleep) = {
                 let mut cfg = shared.write().unwrap();
                 cfg.led_brightness = b.min(100);
-                cfg.lights.managed
+                (cfg.lights.managed, cfg.asleep)
             };
             if let (Some(tx), true) = (&base.tx, managed) {
                 let _ = tx.send(Down::Brightness(b)); // the base has no OpenDeck device of its own
             }
             if led_module(kind).is_some() && !managed {
                 return;
+            }
+            if asleep && matches!(kind, Kind::Keys | Kind::Dial) {
+                return; // kept for when they wake
             }
             Down::Brightness(b)
         }
@@ -1645,6 +1779,30 @@ mod tests {
 
     fn knobs(tx: Sender<Down>, rot: u16, functions: u8) -> Handle {
         Handle { tx, kind: Kind::Knobs, rot, encoders: 3, functions, active: vec![0; 3], pressed_at: vec![None; 3] }
+    }
+
+    #[test]
+    fn dials_show_the_turned_control_once() {
+        let (tx, rx) = mpsc::channel();
+        let (ptx, prx) = mpsc::channel();
+        let dial = |tx| Handle {
+            tx,
+            kind: Kind::Dial,
+            rot: 0,
+            encoders: 1,
+            functions: 1,
+            active: vec![0],
+            pressed_at: vec![None],
+        };
+        let modules = HashMap::from([("D".to_string(), dial(tx)), ("P".to_string(), dial(ptx))]);
+        let (mut cards, mut osd) = (HashMap::new(), HashMap::new());
+        for key in ["K/0", "K/0", "K/1"] {
+            show_osd(key, &[1], &modules, |d| d == "P", &mut cards, &mut osd);
+        }
+        assert_eq!(rx.try_iter().count(), 2); // turning the same knob again only keeps it there
+        assert!(prx.try_recv().is_err()); // a pinned dial keeps its screen
+        assert_eq!(osd["D"], "K/1");
+        assert!(cards.contains_key("D") && !cards.contains_key("P"));
     }
 
     #[test]

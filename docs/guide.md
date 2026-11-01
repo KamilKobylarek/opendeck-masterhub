@@ -30,6 +30,8 @@ Everything the plugin does, part by part. Installing it is in the [README](../RE
 - [Actions](#actions)
   - [Screens: clock, analog clock, CPU, memory, temperatures, GPU](#screens-clock-analog-clock-cpu-memory-temperatures-gpu)
   - [Timer](#timer)
+  - [Stopwatch, counter, command output](#stopwatch-counter-command-output)
+  - [MQTT value](#mqtt-value)
   - [App volume](#app-volume)
   - [Command](#command)
   - [LED lighting](#led-lighting)
@@ -202,6 +204,9 @@ What each connected module, and the base, reports about itself:
 - **Turn key and dial pictures upright when a module is turned**: off by default, like the official app (pictures
   turn with the module). On, a turned 15xKey's key pictures and the dial's screen are turned back so they stand
   upright.
+- **Screens go dark after this many minutes without a touch** (0, the default: never): the 15xKey and the dial
+  go black, so a still picture (a clock, a background) doesn't stay on the LCDs for hours. The first touch of any
+  module only wakes them; the next one does what it should. The LEDs stay as they are.
 
 ### Knobs & dial
 
@@ -213,6 +218,11 @@ What each connected module, and the base, reports about itself:
 - **The dial's screen shows**: *What its turn action shows* (the action's picture), or always a clock, analog
   clock, CPU load, memory use, CPU temperature, GPU load or GPU temperature. An [App volume](#app-volume) action on
   the dial picks its own screen instead.
+- **…as a graph of the last 2 minutes**: that screen (CPU, memory, temperatures, GPU) with a
+  [graph](#screens-clock-analog-clock-cpu-memory-temperatures-gpu) instead of the bar.
+- **The dial shows the knob, fader or roller being turned** (on by default): for a second the dial's screen shows
+  the picture of the action on the control you turn (a volume level, say), then its own screen again. A dial whose
+  screen is set to a clock or a meter keeps it.
 
 ### Faders
 
@@ -346,6 +356,18 @@ Values are refreshed every second. `--` means the system doesn't give the value:
 
 LibreHardwareMonitor is read through its web server (Options → Remote Web Server, port 8085).
 
+![CPU load as a graph](images/dial-cpu-graph.png)
+
+**Graph of the last 2 minutes** (in the action's settings, every screen but the clocks): the value with a graph of
+its last 2 minutes under it, newest on the right, instead of the bar; always from 0 to 100 (percent, degrees). It
+starts empty and fills a sample a second; switching screens with *Next screen* starts it again.
+
+![An alarm](images/dial-alarm.png)
+
+**Alarm above / Alarm below** (in the action's settings, optional; also on Command output and MQTT value): past a
+limit the screen flashes red every other second, e.g. CPU temperature above 90. On a knob or fader the action's
+LED takes its colour from the picture, so it flashes red with it.
+
 ![Screen action settings](images/pi-screen.png)
 
 **On press** (in the action's settings):
@@ -367,6 +389,68 @@ LibreHardwareMonitor is read through its web server (Options → Remote Web Serv
 - **Turn** (on an encoder, while stopped): ±10 seconds per click, from 10 s to 99:59; kept in the action.
 - **Press**: start; press again to stop and reset.
 - On a key it starts and stops; set the time on an encoder.
+
+### Stopwatch, counter, command output
+
+| | | | |
+| --- | --- | --- | --- |
+| ![Stopwatch](images/dial-stopwatch.png) | ![Counter](images/dial-counter.png) | ![Counter with a goal](images/dial-goal.png) | ![Command output](images/dial-output.png) |
+| stopwatch, running | counter with a label | counter with a goal | command output with a label |
+
+Handy while streaming: time live, a tally, a number from anywhere.
+
+- **Stopwatch**: counts up, to hours. A press starts and pauses it; holding the key (or turning the knob while
+  paused) resets it. Not kept when OpenDeck restarts.
+- **Counter**: a number kept in the action. A key's press adds its **step** (1, or e.g. -1 to count down) and
+  holding the key resets it; on an encoder a turn adds a step per click and a press resets. Counters with the same
+  **label** share one number, so a +1 key, a -1 key and the dial can all show and change the same tally. With a
+  **goal** (e.g. 50 subs) it shows `17/50` and a bar, green once reached.
+- **Command output**: runs a **command** every few seconds (5 unless set) and shows the first line it prints, in
+  capitals, under an optional **label**. A script can fetch anything: viewers, the song playing, a build's state.
+  A press runs it at once; `ERROR` means it failed or ran over 10 s (the log says why). For a number, it can
+  [alarm](#screens-clock-analog-clock-cpu-memory-temperatures-gpu) too.
+
+**Text size** (counter, command output, MQTT value): *Auto* makes the value as large as fits; *Small*, *Medium*,
+*Large* or *Huge* keep that size, and a value too wide for the screen at it moves along.
+
+On *Auto*, text longer than 12 characters (up to 64) moves along from right to left, by a column of dots every 0.15 s:
+smoothly on the dial, which the plugin draws itself; on keys through OpenDeck. The font has letters with the
+Polish ones, digits and `: . % - ° / + = ! ? , ' ( ) #`; other characters are left out.
+
+### MQTT value
+
+![MQTT value](images/dial-mqtt.png)
+
+The last message on an MQTT **topic**, through the connection set in [Home Assistant (MQTT)](#home-assistant-mqtt)
+(it has to be on). A retained message shows right away, then every new one within a second.
+
+- **JSON field** (optional): for a JSON message, the value to show: `temperature`, or `sensor.temperature` for a
+  nested one. Empty: the message's first line.
+- **Label** above it and a **unit** after it (`°`, `%`), both optional. As on the other screens: capitals, long
+  text moving along; `--` until a message arrives or when the field isn't in it.
+- One exact topic per action (no `+` or `#`); the plugin subscribes to the topics its actions use and lets go of
+  the rest.
+- **Graph of the last 2 minutes**: for a number, a graph under it from its lowest to its highest value in that
+  time (a sample a second).
+- **Alarm above / Alarm below**: for a number, the screen flashes red past a limit.
+
+Home Assistant doesn't put its states on MQTT by itself. Either an automation publishes the one you want:
+
+```yaml
+# the living room's temperature on MQTT, kept for whoever subscribes later
+triggers:
+  - trigger: state
+    entity_id: sensor.living_room_temperature
+actions:
+  - action: mqtt.publish
+    data:
+      topic: home/livingroom/temperature
+      payload: "{{ trigger.to_state.state }}"
+      retain: true
+```
+
+or the `mqtt_statestream` integration publishes them all (topic
+`<base_topic>/sensor/living_room_temperature/state`).
 
 ### App volume
 
@@ -546,6 +630,9 @@ mosquitto_pub -h homeassistant.local -u masterhub -P … -t masterhub/mh-0202-MH
 
 ## Troubleshooting
 
+- **Save diagnostics** (the button at the top of the settings page): one JSON file for a bug report, with the
+  plugin's and OpenDeck's versions, the modules and their sockets, the settings (MQTT addresses and accounts, file
+  paths and commands left out), the end of the log and the latest input. Look it over before you attach it.
 - **Logs**: the plugin writes to OpenDeck's log folder, file `plugins/pl.kobylarek.masterhub.sdPlugin.log`:
   macOS `~/Library/Logs/opendeck/`, Windows `%APPDATA%\opendeck\logs\`, Linux `~/.local/share/opendeck/logs/`,
   Flatpak `~/.var/app/me.amankhanna.opendeck/data/opendeck/logs/`.

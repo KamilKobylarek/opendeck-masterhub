@@ -29,7 +29,7 @@ Windows and Linux, without the official app.
   to OpenDeck too, for the releases that can draw it.
   [→](docs/guide.md#placement-where-each-module-sits)
 - **Screens for the dial and keys**: clock, analog clock, timer, CPU load, memory use, CPU and GPU temperature,
-  GPU load. [→](docs/guide.md#actions)
+  GPU load; a stopwatch, a counter, a command's output and a value from MQTT. [→](docs/guide.md#actions)
 - **App volume**: per-app volume (Spotify, Discord, a browser…) from a fader, knob, roller or the dial, shown on
   the dial's screen and the LEDs. [→](docs/guide.md#app-volume)
 - **Command**: a command with a fader's position or the clicks turned, e.g. a monitor's brightness.

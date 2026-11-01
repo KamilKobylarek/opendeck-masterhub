@@ -180,6 +180,75 @@ pub(crate) fn fill(template: &str, values: &[(&str, &str)]) -> String {
 
 /// An HTML page with its inline scripts allowed by a fresh nonce and nothing else (Content-Security-Policy), so a
 /// value that slipped into the page unescaped can't run script.
+/// A bug report's contents: versions, the modules and where they sit, the settings without what identifies the
+/// user's network or files (broker address and account, CA file, signal commands, the background's path), the end
+/// of the plugin's log and the live input log. The MQTT password is never in the settings (it's in the keychain).
+pub(crate) fn diagnostics(cfg: &Config, plugin: &str) -> Value {
+    let modules: Vec<Value> = cfg
+        .modules
+        .iter()
+        .map(|m| {
+            let placed = cfg.placed.get(&m.id);
+            let socket = placed.and_then(|(_, _, s)| s.clone());
+            let turn = placed
+                .and_then(|(kind, _, s)| placement::place(*kind, s.as_deref()?))
+                .map(|p| (p.rotation + cfg.base_turn) % 360);
+            json!({ "id": m.id, "name": m.name, "serial": m.serial, "firmware": m.firmware, "deviceInfo": m.device_info,
+                    "screenBrightness": m.backlight, "ledModes": m.led_modes, "ledBrightness": m.led_brightness,
+                    "socket": socket, "turn": turn })
+        })
+        .collect();
+    let mut settings = cfg.to_json();
+    let mut redact = |v: &mut Value| {
+        if v.as_str().is_some_and(|s| !s.is_empty()) {
+            *v = json!("(set, left out)");
+        }
+    };
+    for field in ["host", "username", "caFile"] {
+        redact(&mut settings["mqtt"][field]);
+    }
+    redact(&mut settings["keypadBackground"]);
+    if let Some(signals) = settings["lights"]["signals"].as_object_mut() {
+        signals.values_mut().for_each(&mut redact);
+    }
+    let app = &cfg.host["application"];
+    json!({
+        "plugin": env!("CARGO_PKG_VERSION"),
+        "opendeck": app["version"],
+        "system": format!("{} {} {}", std::env::consts::OS, std::env::consts::ARCH, app["platformVersion"].as_str().unwrap_or_default()).trim(),
+        "baseTurn": cfg.base_turn,
+        "modules": modules,
+        "settings": settings,
+        "log": log_tail(plugin),
+        "input": debug::since(0),
+    })
+}
+
+/// The last 64 KB of the plugin's log, which OpenDeck keeps in its log folder under the plugin's id.
+fn log_tail(plugin: &str) -> String {
+    let file = format!("plugins/{plugin}.log");
+    let var = |name: &str| std::env::var_os(name).map(std::path::PathBuf::from);
+    let mut dirs = Vec::new();
+    if cfg!(target_os = "macos") {
+        dirs.extend(var("HOME").map(|h| h.join("Library/Logs/opendeck")));
+    } else if cfg!(windows) {
+        dirs.extend(var("APPDATA").map(|a| a.join("opendeck/logs")));
+    } else {
+        dirs.extend(
+            var("XDG_DATA_HOME")
+                .or_else(|| var("HOME").map(|h| h.join(".local/share")))
+                .map(|d| d.join("opendeck/logs")),
+        );
+        dirs.extend(var("HOME").map(|h| h.join(".var/app/me.amankhanna.opendeck/data/opendeck/logs")));
+    }
+    for path in dirs.iter().map(|d| d.join(&file)) {
+        if let Ok(bytes) = std::fs::read(&path) {
+            return String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(64 << 10)..]).into_owned();
+        }
+    }
+    "(the log wasn't found)".into()
+}
+
 pub(crate) fn respond_html(stream: &mut TcpStream, page: &str) -> std::io::Result<()> {
     let nonce = &secret()[..22];
     let body = page.replace("<script>", &format!("<script nonce=\"{nonce}\">"));
@@ -334,6 +403,19 @@ pub(crate) fn serve_settings(
         return respond(&mut stream, "application/json", &parts);
     }
 
+    // Everything a bug report needs, as one file.
+    if path == "/diagnostics" {
+        let body = serde_json::to_string_pretty(&diagnostics(&shared.read().unwrap(), uuid)).unwrap_or_default();
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        return write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Disposition: attachment; \
+             filename=\"masterhub-diagnostics-{stamp}.json\"\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+    }
+
     // Live input view (checking real hardware).
     if path == "/debug" {
         return respond_html(&mut stream, debug::PAGE);
@@ -364,6 +446,13 @@ pub(crate) fn serve_settings(
             }
             cfg.fader_scale = read_scales(&json!({ "faderScale": values })); // validates the range
             cfg.acceleration = params.iter().any(|(k, _)| k == "accel");
+            cfg.dial_osd = params.iter().any(|(k, _)| k == "dialosd");
+            cfg.dial_graph = params.iter().any(|(k, _)| k == "dialgraph");
+            if let Some(m) =
+                params.iter().find(|(k, _)| k == "screensoff").and_then(|(_, v)| v.trim().parse::<u16>().ok())
+            {
+                cfg.screens_off_after = m.min(1440);
+            }
             cfg.placement_pictures = params.iter().any(|(k, v)| k == "placeview" && v == "pictures");
             cfg.dial_screen = params
                 .iter()
@@ -438,7 +527,8 @@ pub(crate) fn serve_settings(
         let live = placement_parts(&cfg);
         let base = format!(
             "<label>Base rotation<select name=baserot>{}</select></label>\
-             <label>Turn key and dial pictures upright when a module is turned (the official app doesn't)<input type=checkbox name=upright{}></label>",
+             <label>Turn key and dial pictures upright when a module is turned (the official app doesn't)<input type=checkbox name=upright{}></label>\
+             <label>Screens go dark after this many minutes without a touch (0 = never; the first touch only wakes them)<input name=screensoff type=number min=0 max=1440 value={}></label>",
             [None, Some(0), Some(90), Some(180), Some(270)]
                 .iter()
                 .map(|r| format!(
@@ -448,18 +538,23 @@ pub(crate) fn serve_settings(
                     r.map_or("Auto (sensor)".into(), |r| format!("{r}°"))
                 ))
                 .collect::<String>(),
-            checked(cfg.upright)
+            checked(cfg.upright),
+            cfg.screens_off_after
         );
         let knobs = format!(
             "<label>Functions per knob and the dial (1 = off; changing it registers them again)<input name=functions type=number min=1 max={MAX_FUNCTIONS} value={}></label>\
              <label>Acceleration: fast turns count up to 3× the clicks<input type=checkbox name=accel{}></label>\
-             <label>The dial's screen shows (unless App volume on it picks one)<select name=dialscreen>{}</select></label>",
+             <label>The dial's screen shows (unless App volume on it picks one)<select name=dialscreen>{}</select></label>\
+             <label>…as a graph of the last 2 minutes (CPU, memory, temperatures, GPU)<input type=checkbox name=dialgraph{}></label>\
+             <label>The dial shows the knob, fader or roller being turned for a second<input type=checkbox name=dialosd{}></label>",
             cfg.functions,
             checked(cfg.acceleration),
             std::iter::once(("", "What its turn action shows"))
                 .chain(DIAL_SCREENS.iter().copied())
                 .map(|(k, name)| format!("<option value={k}{}>{name}</option>", if cfg.dial_screen.as_deref().unwrap_or("") == k { " selected" } else { "" }))
-                .collect::<String>()
+                .collect::<String>(),
+            checked(cfg.dial_graph),
+            checked(cfg.dial_osd)
         );
         let keypad = format!(
             "<label>Picture file<input name=kbg id=kbg value=\"{}\" placeholder=\"empty: no background\"></label>\
@@ -752,6 +847,20 @@ mod tests {
         // a GET no longer saves
         request(host, &format!("GET /{path}save?accel="), "");
         assert!(shared.read().unwrap().acceleration);
+    }
+
+    #[test]
+    fn diagnostics_leave_out_what_identifies_the_user() {
+        let mut cfg = Config::new();
+        cfg.mqtt.host = "broker.home.example".into();
+        cfg.mqtt.username = "alice".into();
+        cfg.keypad_background = Some("/Users/alice/bg.gif".into());
+        cfg.lights.signals.insert("mh-0202-X/0".into(), "curl -sf http://192.168.1.10".into());
+        let text = diagnostics(&cfg, "pl.kobylarek.masterhub.sdPlugin").to_string();
+        for private in ["broker.home.example", "alice", "192.168.1.10"] {
+            assert!(!text.contains(private), "{private} in {text}");
+        }
+        assert!(text.contains("\"plugin\":") && text.contains("mh-0202-X/0"));
     }
 
     #[test]
